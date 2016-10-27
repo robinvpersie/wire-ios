@@ -30,7 +30,7 @@ import zmessaging
     
     ///  Whether Hockeyapp should be used
     public var useHockey: Bool {
-        return NSUserDefaults.standardUserDefaults().boolForKey("UseHockey")
+        return UserDefaults.standard.bool(forKey: "UseHockey")
     }
     
     /// Whether to skip the first login alert
@@ -48,22 +48,26 @@ import zmessaging
     public let uploadAddressbookOnSimulator : Bool
     
     /// Delay in address book remote search override
-    public let delayInAddressBookRemoteSearch : NSTimeInterval?
-    
+    public let delayInAddressBookRemoteSearch : TimeInterval?
+
+    /// The name of the arguments file in the /tmp directory
+    private let fileArgumentsName = "wire_arguments.txt"
+
     override init() {
-        let arguments = Arguments()
-        
+        let url = URL(string: NSTemporaryDirectory())?.appendingPathComponent(fileArgumentsName)
+        let arguments: ArgumentsType = url.flatMap(FileArguments.init) ?? CommandLineArguments()
+
         self.disableAutocorrection = arguments.hasFlag(AutomationKey.DisableAutocorrection.rawValue)
         self.uploadAddressbookOnSimulator = arguments.hasFlag(AutomationKey.EnableAddressBookOnSimulator.rawValue)
         self.automationEmailCredentials = AutomationHelper.credentials(arguments)
         if arguments.hasFlag(AutomationKey.LogNetwork.rawValue) {
-            ZMLogSetLevelForTag(.Debug, "Network")
+            ZMLogSetLevelForTag(.debug, "Network")
         }
         self.delayInAddressBookRemoteSearch = AutomationHelper.addressBookSearchDelay(arguments)
         super.init()
     }
     
-    private enum AutomationKey: String {
+    fileprivate enum AutomationKey: String {
         case Email = "loginemail"
         case Password = "loginpassword"
         case LogNetwork = "debug-log-network"
@@ -73,7 +77,7 @@ import zmessaging
     }
     
     /// Returns the login email and password credentials if set in the given arguments
-    private static func credentials(arguments: Arguments) -> ZMEmailCredentials? {
+    fileprivate static func credentials(_ arguments: ArgumentsType) -> ZMEmailCredentials? {
         guard let email = arguments.flagValueIfPresent(AutomationKey.Email.rawValue),
             let password = arguments.flagValueIfPresent(AutomationKey.Password.rawValue) else {
             return nil
@@ -82,42 +86,67 @@ import zmessaging
     }
     
     /// Returns the custom time interval for address book search delay if it set in the given arguments
-    private static func addressBookSearchDelay(arguments: Arguments) -> NSTimeInterval? {
+    fileprivate static func addressBookSearchDelay(_ arguments: ArgumentsType) -> TimeInterval? {
         guard let delayString = arguments.flagValueIfPresent(AutomationKey.AddressBookRemoteSearchDelay.rawValue),
             let delay = Int(delayString) else {
                 return nil
         }
-        return NSTimeInterval(delay)
+        return TimeInterval(delay)
     }
 }
 
 // MARK: - Helpers
 
-/// Command line arguments
-private struct Arguments {
-    
-    let flagPrefix = "--"
-    
+protocol ArgumentsType {
+
+    var flagPrefix: String { get }
+
     /// Argument strings
-    let commandLineArguments : Set<String>
-    
+    var arguments: Set<String> { get }
+
     /// Returns whether the flag is set
-    func hasFlag(name: String) -> Bool {
-        return self.commandLineArguments.contains(flagPrefix + name)
-    }
-    
+    func hasFlag(_ name: String) -> Bool
+
     /// Returns the value of a flag, if present
-    func flagValueIfPresent(commandLineArgument: String) -> String? {
-        for argument in self.commandLineArguments {
+    func flagValueIfPresent(_ commandLineArgument: String) -> String?
+}
+
+extension ArgumentsType {
+
+    var flagPrefix: String { return "--" }
+
+    func hasFlag(_ name: String) -> Bool {
+        return self.arguments.contains(flagPrefix + name)
+    }
+
+    func flagValueIfPresent(_ commandLineArgument: String) -> String? {
+        for argument in self.arguments {
             let searchString = "--" + commandLineArgument + "="
             if argument.hasPrefix(searchString) {
-                return argument.substringFromIndex(searchString.startIndex.advancedBy(searchString.characters.count))
+                return argument.substring(from: searchString.characters.index(searchString.startIndex, offsetBy: searchString.characters.count))
             }
         }
         return nil
     }
-    
+}
+
+/// Command line arguments
+private struct CommandLineArguments: ArgumentsType {
+
+    let arguments: Set<String>
+
     init() {
-        self.commandLineArguments = Set(NSProcessInfo.processInfo().arguments)
+        arguments = Set(ProcessInfo.processInfo.arguments)
+    }
+}
+
+/// Arguments read from a file on disk
+private struct FileArguments: ArgumentsType {
+
+    let arguments: Set<String>
+
+    init?(url: URL) {
+        guard let argumentsString = try? String(contentsOfFile: url.path, encoding: .utf8) else { return nil }
+        arguments = Set(argumentsString.components(separatedBy: .whitespaces))
     }
 }

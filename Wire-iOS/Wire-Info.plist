@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>UIAppFonts</key>
+	<array>
+		<string>RedactedScript-Regular.ttf</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>In order to take and send pictures Wire needs access to your camera.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>In order to send stored pictures Wire needs access to your  photo library.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
@@ -68,6 +76,12 @@
 	<string>12345677</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<string>comgooglemaps</string>
+		<string>tweetbot</string>
+		<string>twitterrific</string>
+		<string>googlechrome</string>
+		<string>googlechromes</string>
+		<string>firefox</string>
 		<string>org-appextension-feature-password-management</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>

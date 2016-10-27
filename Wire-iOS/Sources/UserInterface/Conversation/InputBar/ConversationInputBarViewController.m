@@ -17,9 +17,9 @@
 // 
 
 
-#import <AVFoundation/AVAudioSession.h>
 #import <PureLayout.h>
 @import MobileCoreServices;
+@import AVFoundation;
 
 #import "ConversationInputBarViewController.h"
 #import "ConversationInputBarViewController+Private.h"
@@ -29,7 +29,6 @@
 #import <WireExtensionComponents/WireExtensionComponents.h>
 #import "ConfirmAssetViewController.h"
 #import "TextView.h"
-#import "TypingConversationView.h"
 #import "CameraViewController.h"
 #import "SketchViewController.h"
 #import "UIView+Borders.h"
@@ -39,7 +38,7 @@
 #import "Analytics+iOS.h"
 #import "AnalyticsTracker+Sketchpad.h"
 #import "AnalyticsTracker+FileTransfer.h"
-#import "NSString+Wire.h"
+#import "Wire-Swift.h"
 
 
 #import "ZMUserSession+Additions.h"
@@ -52,12 +51,10 @@
 #import "ConversationInputBarSendController.h"
 #import "FLAnimatedImage.h"
 #import "MediaAsset.h"
-#import "Wire-Swift.h"
 #import "UIView+WR_ExtendedBlockAnimations.h"
 #import "UIView+Borders.h"
 #import "ImageMessageCell.h"
-
-#import "Wire-Swift.h"
+#import "WAZUIMagic.h"
 
 
 @interface ConversationInputBarViewController (Commands)
@@ -91,23 +88,24 @@
 @interface ConversationInputBarViewController (ZMTypingChangeObserver) <ZMTypingChangeObserver>
 @end
 
-@interface ConversationInputBarViewController (VerifiedShield)
-
-- (void)verifiedShieldButtonPressed:(UIButton *)sender;
-
-@end
-
 @interface ConversationInputBarViewController (Giphy)
 
 - (void)giphyButtonPressed:(id)sender;
 
 @end
 
-@interface ConversationInputBarViewController (UITextViewDelegate) <UITextViewDelegate>
+@interface ConversationInputBarViewController (Sending)
+
+- (void)sendButtonPressed:(id)sender;
 
 @end
 
+
 @interface  ConversationInputBarViewController (UIGestureRecognizerDelegate) <UIGestureRecognizerDelegate>
+
+@end
+
+@interface ConversationInputBarViewController (GiphySearchViewController) <GiphySearchViewControllerDelegate>
 
 @end
 
@@ -122,16 +120,17 @@
 @property (nonatomic) IconButton *sketchButton;
 @property (nonatomic) IconButton *pingButton;
 @property (nonatomic) IconButton *locationButton;
+@property (nonatomic) IconButton *sendButton;
+@property (nonatomic) IconButton *ephemeralIndicatorButton;
+@property (nonatomic) IconButton *emojiButton;
 @property (nonatomic) IconButton *gifButton;
+@property (nonatomic) IconButton *hourglassButton;
 
 @property (nonatomic) UIGestureRecognizer *singleTapGestureRecognizer;
 
 @property (nonatomic) UserImageView *authorImageView;
-@property (nonatomic) TypingConversationView *typingView;
-@property (nonatomic) UIView *verifiedContainerView;
-@property (nonatomic) UILabel *verifiedLabelView;
-@property (nonatomic) ButtonWithLargerHitArea *verifiedShieldButton;
 @property (nonatomic) NSLayoutConstraint *collapseViewConstraint;
+@property (nonatomic) TypingIndicatorView *typingIndicatorView;
 
 @property (nonatomic) InputBar *inputBar;
 @property (nonatomic) ZMConversation *conversation;
@@ -140,6 +139,7 @@
 @property (nonatomic) id <ZMConversationObserverOpaqueToken> conversationObserverToken;
 
 @property (nonatomic) UIViewController *inputController;
+@property (nonatomic) ConversationInputBarButtonState *sendButtonState;
 
 @property (nonatomic) BOOL inRotation;
 @end
@@ -154,10 +154,10 @@
         self.conversation = conversation;
         self.sendController = [[ConversationInputBarSendController alloc] initWithConversation:self.conversation];
         self.conversationObserverToken = [self.conversation addConversationObserver:self];
-        
+        self.sendButtonState = [[ConversationInputBarButtonState alloc] init];
         if ([self.conversation shouldDisplayIsTyping]) {
-            [_conversation addTypingObserver:self];
-            self.typingUsers = _conversation.typingUsers;
+            [conversation addTypingObserver:self];
+            self.typingUsers = conversation.typingUsers;
         }
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardDidHide:) name:UIKeyboardDidHideNotification object:nil];
@@ -181,25 +181,30 @@
     
     [self createSingleTapGestureRecognizer];
     
-    [self createInputBar];
-    [self createGifButton];
-    [self createVerifiedView];
-    [self createAuthorImageView];
-    [self createTypingView];
+    [self createInputBar]; // Creates all input bar buttons
+    [self createSendButton];
+    [self createEphemeralIndicatorButton];
+    [self createEmojiButton];
+
+    [self createHourglassButton];
+    [self createTypingIndicatorView];
     
     if (self.conversation.hasDraftMessageText) {
         self.inputBar.textView.text = self.conversation.draftMessageText;
     }
     
     [self configureAudioButton:self.audioButton];
+    [self configureEmojiButton:self.emojiButton];
+    [self configureEphemeralKeyboardButton:self.hourglassButton];
+    [self configureEphemeralKeyboardButton:self.ephemeralIndicatorButton];
     
+    [self.sendButton addTarget:self action:@selector(sendButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
     [self.photoButton addTarget:self action:@selector(cameraButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
     [self.videoButton addTarget:self action:@selector(videoButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
     [self.sketchButton addTarget:self action:@selector(sketchButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
     [self.uploadFileButton addTarget:self action:@selector(docUploadPressed:) forControlEvents:UIControlEventTouchUpInside];
     [self.pingButton addTarget:self action:@selector(pingButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
     [self.gifButton addTarget:self action:@selector(giphyButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
-    [self.verifiedShieldButton addTarget:self action:@selector(verifiedShieldButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
     [self.locationButton addTarget:self action:@selector(locationButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
     
     if (self.conversationObserverToken == nil) {
@@ -208,6 +213,17 @@
     
     [self updateAccessoryViews];
     [self updateInputBarVisibility];
+    [self updateSeparatorLineVisibility];
+    [self updateTypingIndicatorVisibility];
+    [self updateWritingState];
+}
+
+- (void)viewWillAppear:(BOOL)animated
+{
+    [super viewWillAppear:animated];
+    [self updateRightAccessoryView];
+    [self.inputBar updateReturnKey];
+    [self.inputBar updateEphemeralState];
 }
 
 - (void)viewWillDisappear:(BOOL)animated
@@ -221,6 +237,12 @@
     [super viewDidDisappear:animated];
     [self endEditingMessageIfNeeded];
     [NSObject cancelPreviousPerformRequestsWithTarget:self];
+}
+
+- (void)viewDidLayoutSubviews
+{
+    [super viewDidLayoutSubviews];
+    self.ephemeralIndicatorButton.layer.cornerRadius = CGRectGetWidth(self.ephemeralIndicatorButton.bounds) / 2;
 }
 
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
@@ -279,8 +301,12 @@
     self.locationButton.accessibilityIdentifier = @"locationButton";
     [self.locationButton setIcon:ZetaIconTypeLocationPin withSize:ZetaIconSizeTiny forState:UIControlStateNormal];
     
-
-    self.inputBar = [[InputBar alloc] initWithButtons:@[self.photoButton, self.videoButton, self.sketchButton, self.locationButton, self.audioButton, self.pingButton, self.uploadFileButton]];
+    self.gifButton = [[IconButton alloc] init];
+    self.gifButton.hitAreaPadding = CGSizeZero;
+    self.gifButton.accessibilityIdentifier = @"gifButton";
+    [self.gifButton setIcon:ZetaIconTypeGif withSize:ZetaIconSizeTiny forState:UIControlStateNormal];
+    
+    self.inputBar = [[InputBar alloc] initWithButtons:@[self.photoButton, self.videoButton, self.sketchButton, self.gifButton, self.audioButton, self.pingButton, self.uploadFileButton, self.locationButton]];
     self.inputBar.translatesAutoresizingMaskIntoConstraints = NO;
     self.inputBar.textView.delegate = self;
     
@@ -316,67 +342,86 @@
     [self.audioRecordViewController.view autoPinEdge:ALEdgeTop toEdge:ALEdgeTop ofView:self.inputBar withOffset:0.5];
 }
 
-- (void)createGifButton
+- (void)createSendButton
 {
-    self.gifButton = [IconButton iconButtonCircular];
-    self.gifButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.gifButton setIcon:ZetaIconTypeGif withSize:ZetaIconSizeTiny forState:UIControlStateNormal];
-    self.gifButton.cas_styleClass = @"gif-button";
-    self.gifButton.accessibilityIdentifier = @"gifButton";
-    
-    [self.inputBar.rightAccessoryView addSubview:self.gifButton];
-    [self.gifButton autoSetDimensionsToSize:CGSizeMake(32, 32)];
-    [self.gifButton autoPinEdgesToSuperviewEdgesWithInsets:UIEdgeInsetsMake(12, 0, 0, 0) excludingEdge:ALEdgeBottom];
+    self.sendButton = [IconButton iconButtonDefault];
+    self.sendButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.sendButton setIcon:ZetaIconTypeSend withSize:ZetaIconSizeTiny forState:UIControlStateNormal];
+
+    self.sendButton.accessibilityIdentifier = @"sendButton";
+    self.sendButton.adjustsImageWhenHighlighted = NO;
+    self.sendButton.adjustBackgroundImageWhenHighlighted = YES;
+    self.sendButton.cas_styleClass = @"send-button";
+
+    [self.inputBar.rightAccessoryView addSubview:self.sendButton];
+    CGFloat edgeLength = 28;
+    [self.sendButton autoSetDimensionsToSize:CGSizeMake(edgeLength, edgeLength)];
+    CGFloat rightInset = ([WAZUIMagic cgFloatForIdentifier:@"content.left_margin"] - edgeLength) / 2;
+    [self.sendButton autoPinEdgesToSuperviewEdgesWithInsets:UIEdgeInsetsMake(14, 0, 0, rightInset - 16) excludingEdge:ALEdgeBottom];
 }
 
-- (void)createVerifiedView
+- (void)createEphemeralIndicatorButton
 {
-    self.verifiedLabelView = [[UILabel alloc] initForAutoLayout];
-    self.verifiedLabelView.cas_styleClass = @"conversationVerifiedLabel";
-    self.verifiedLabelView.accessibilityIdentifier = @"verifiedConversationLabel";
-    self.verifiedLabelView.text = NSLocalizedString(@"conversation.input_bar.verified", @"");
-    self.verifiedLabelView.alpha = 0;
-    [self.inputBar.rightAccessoryView addSubview:self.verifiedLabelView];
-    
-    self.verifiedShieldButton = [[ButtonWithLargerHitArea alloc] initForAutoLayout];
-    self.verifiedShieldButton.accessibilityIdentifier = @"verifiedConversationIndicator";
-    [self.verifiedShieldButton setImage:[WireStyleKit imageOfShieldverified] forState:UIControlStateNormal];
-    [self.inputBar.rightAccessoryView addSubview:self.verifiedShieldButton];
-    
-    [self.verifiedLabelView autoAlignAxis:ALAxisHorizontal toSameAxisOfView:self.verifiedShieldButton];
-    [self.verifiedLabelView autoPinEdge:ALEdgeTrailing toEdge:ALEdgeLeading ofView:self.verifiedShieldButton withOffset:-12.0f];
-    
-    [self.verifiedShieldButton autoAlignAxis:ALAxisVertical toSameAxisOfView:self.gifButton];
-    [self.verifiedShieldButton autoAlignAxis:ALAxisHorizontal toSameAxisOfView:self.gifButton];
+    self.ephemeralIndicatorButton = [[IconButton alloc] initForAutoLayout];
+    self.ephemeralIndicatorButton.layer.borderWidth = 0.5;
+
+    self.ephemeralIndicatorButton.accessibilityIdentifier = @"ephemeralTimeIndicatorButton";
+    self.ephemeralIndicatorButton.adjustsTitleWhenHighlighted = YES;
+    self.ephemeralIndicatorButton.adjustsBorderColorWhenHighlighted = YES;
+
+    [self.inputBar.rightAccessoryView addSubview:self.ephemeralIndicatorButton];
+
+    [self.ephemeralIndicatorButton autoSetDimensionsToSize:CGSizeMake(32, 32)];
+    [self.ephemeralIndicatorButton autoAlignAxis:ALAxisHorizontal toSameAxisOfView:self.sendButton];
+    [self.ephemeralIndicatorButton autoPinEdge:ALEdgeTrailing toEdge:ALEdgeTrailing ofView:self.sendButton];
+
+    [self updateEphemeralIndicatorButtonTitle:self.ephemeralIndicatorButton];
 }
 
-
-- (void)createAuthorImageView
+- (void)createEmojiButton
 {
     const CGFloat senderDiameter = [WAZUIMagic floatForIdentifier:@"content.sender_image_tile_diameter"];
     
-    self.authorImageView = [[UserImageView alloc] initWithMagicPrefix:@"content.author_image"];
-    self.authorImageView.accessibilityIdentifier = @"authorImage";
-    self.authorImageView.suggestedImageSize = UserImageViewSizeTiny;
-    self.authorImageView.translatesAutoresizingMaskIntoConstraints = NO;
-    self.authorImageView.userInteractionEnabled = NO;
-    self.authorImageView.borderWidth = 0.0f;
-    self.authorImageView.alpha = 0.0f;
-    self.authorImageView.user = [ZMUser selfUser];
-    [self.inputBar.leftAccessoryView addSubview:self.authorImageView];
-    [self.authorImageView autoAlignAxisToSuperviewAxis:ALAxisVertical];
-    [self.authorImageView autoPinEdgeToSuperviewEdge:ALEdgeTop withInset:14];
-    [self.authorImageView autoSetDimensionsToSize:CGSizeMake(senderDiameter, senderDiameter)];
+    self.emojiButton = IconButton.iconButtonCircular;
+    self.emojiButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.emojiButton setIcon:ZetaIconTypeEmoji withSize:ZetaIconSizeTiny forState:UIControlStateNormal];
+    self.emojiButton.accessibilityIdentifier = @"emojiButton";
+
+    [self.inputBar.leftAccessoryView addSubview:self.emojiButton];
+    [self.emojiButton autoAlignAxisToSuperviewAxis:ALAxisVertical];
+    [self.emojiButton autoPinEdgeToSuperviewEdge:ALEdgeTop withInset:14];
+    [self.emojiButton autoSetDimensionsToSize:CGSizeMake(senderDiameter, senderDiameter)];
 }
 
-- (void)createTypingView
+- (void)createHourglassButton
 {
-    self.typingView = [[TypingConversationView alloc] initForAutoLayout];
-    self.typingView.userInteractionEnabled = NO;
-    self.typingView.users = self.typingUsers;
-    [self.inputBar.leftAccessoryView addSubview:self.typingView];
-    [self.typingView autoAlignAxisToSuperviewAxis:ALAxisVertical];
-    [self.typingView autoPinEdgeToSuperviewEdge:ALEdgeTop withInset:14];
+    self.hourglassButton = IconButton.iconButtonDefault;
+    self.hourglassButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+    [self.hourglassButton setIcon:ZetaIconTypeHourglass withSize:ZetaIconSizeTiny forState:UIControlStateNormal];
+
+    self.hourglassButton.accessibilityIdentifier = @"ephemeralTimeSelectionButton";
+    self.hourglassButton.cas_styleClass = @"hourglass";
+    [self.inputBar.rightAccessoryView addSubview:self.hourglassButton];
+
+    [self.hourglassButton autoAlignAxis:ALAxisHorizontal toSameAxisOfView:self.sendButton];
+    [self.hourglassButton autoPinEdge:ALEdgeLeft toEdge:ALEdgeLeft ofView:self.sendButton withOffset:0];
+    [self.hourglassButton autoPinEdge:ALEdgeTrailing toEdge:ALEdgeTrailing ofView:self.sendButton withOffset:0];
+}
+
+- (void)createTypingIndicatorView
+{
+    self.typingIndicatorView = [[TypingIndicatorView alloc] init];
+    self.typingIndicatorView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.typingIndicatorView.accessibilityIdentifier = @"typingIndicator";
+    self.typingIndicatorView.typingUsers = self.typingUsers.allObjects;
+    [self.typingIndicatorView setHidden:YES animated:NO];
+    
+    [self.inputBar  addSubview:self.typingIndicatorView];
+    [self.typingIndicatorView  autoConstrainAttribute:(ALAttribute)ALAxisHorizontal toAttribute:ALAttributeTop ofView:self.inputBar];
+    [self.typingIndicatorView autoAlignAxisToSuperviewAxis:ALAxisVertical];
+    [self.typingIndicatorView autoPinEdgeToSuperviewEdge:ALEdgeLeft withInset:48 relation:NSLayoutRelationGreaterThanOrEqual];
+    [self.typingIndicatorView autoPinEdgeToSuperviewEdge:ALEdgeRight withInset:48 relation:NSLayoutRelationGreaterThanOrEqual];
 }
 
 - (void)updateNewButtonTitleLabel
@@ -391,9 +436,31 @@
 
 - (void)updateRightAccessoryView
 {
-    const NSUInteger textLength = self.inputBar.textView.text.length;
-    self.gifButton.hidden = ! (textLength > 0 && textLength < 20) || self.inputBar.isEditing;
-    self.verifiedShieldButton.hidden = self.conversation.securityLevel != ZMConversationSecurityLevelSecure || self.inputBar.textView.isFirstResponder || textLength > 0;
+    [self updateEphemeralIndicatorButtonTitle:self.ephemeralIndicatorButton];
+    [self updateSendButtonColor];
+
+    NSString *trimmed = [self.inputBar.textView.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+
+    [self.sendButtonState updateWithTextLength:trimmed.length
+                                       editing:nil != self.editingMessage
+                            destructionTimeout:self.conversation.messageDestructionTimeout
+                              conversationType:self.conversation.conversationType
+                                          mode:self.mode];
+
+    self.sendButton.hidden = self.sendButtonState.sendButtonHidden;
+    self.hourglassButton.hidden = self.sendButtonState.hourglassButtonHidden;
+    self.ephemeralIndicatorButton.hidden = self.sendButtonState.ephemeralIndicatorButtonHidden;
+
+    [self.ephemeralIndicatorButton setBackgroundImage:self.conversation.timeoutImage forState:UIControlStateNormal];
+}
+
+- (void)updateSendButtonColor
+{
+    if (self.conversation.messageDestructionTimeout != 0) {
+        [self.sendButton setBackgroundImageColor:[UIColor wr_colorFromColorScheme:ColorSchemeColorEphemeral] forState:UIControlStateNormal];
+    } else {
+        [self.sendButton setBackgroundImageColor:UIColor.accentColor forState:UIControlStateNormal];
+    }
 }
 
 - (void)updateAccessoryViews
@@ -408,10 +475,34 @@
     [self updateRightAccessoryView];
 }
 
+- (void)setInputBarOverlapsContent:(BOOL)inputBarOverlapsContent
+{
+    _inputBarOverlapsContent = inputBarOverlapsContent;
+    
+    [self updateSeparatorLineVisibility];
+}
+
 - (void)setTypingUsers:(NSSet *)typingUsers
 {
     _typingUsers = typingUsers;
-    self.typingView.users = typingUsers;
+    
+    [self updateSeparatorLineVisibility];
+    [self updateTypingIndicatorVisibility];
+}
+
+- (void)updateTypingIndicatorVisibility
+{
+    if (self.typingUsers.count > 0) {
+        self.typingIndicatorView.typingUsers = self.typingUsers.allObjects;
+        [self.typingIndicatorView layoutIfNeeded];
+    }
+    
+    [self.typingIndicatorView setHidden:self.typingUsers.count == 0 animated: true];
+}
+
+- (void)updateSeparatorLineVisibility
+{
+    self.inputBar.separatorEnabled = self.inputBarOverlapsContent || self.typingUsers.count > 0;
 }
 
 - (void)updateInputBarVisibility
@@ -446,51 +537,93 @@
         case ConversationInputBarViewControllerModeTextInput:
             self.inputController = nil;
             self.singleTapGestureRecognizer.enabled = NO;
-            self.audioButton.selected = NO;
-            self.photoButton.selected = NO;
+            [self selectInputControllerButton:nil];
             break;
     
         case ConversationInputBarViewControllerModeAudioRecord:
-            if (nil != [UITextInputAssistantItem class]) {
-                UITextInputAssistantItem* item = self.inputBar.textView.inputAssistantItem;
-                item.leadingBarButtonGroups = @[];
-                item.trailingBarButtonGroups = @[];
-            }
+            [self clearTextInputAssistentItemIfNeeded];
             
             if (self.inputController == nil || self.inputController != self.audioRecordKeyboardViewController) {
                 if (self.audioRecordKeyboardViewController == nil) {
                     self.audioRecordKeyboardViewController = [[AudioRecordKeyboardViewController alloc] init];
                     self.audioRecordKeyboardViewController.delegate = self;
                 }
-                self.cameraKeyboardViewController = nil;
+
                 self.inputController = self.audioRecordKeyboardViewController;
             }
             [Analytics.shared tagMediaAction:ConversationMediaActionAudioMessage inConversation:self.conversation];
 
             self.singleTapGestureRecognizer.enabled = YES;
-            self.audioButton.selected = YES;
-            self.photoButton.selected = NO;
+            [self selectInputControllerButton:self.audioButton];
             break;
             
         case ConversationInputBarViewControllerModeCamera:
-            if (nil != [UITextInputAssistantItem class]) {
-                UITextInputAssistantItem* item = self.inputBar.textView.inputAssistantItem;
-                item.leadingBarButtonGroups = @[];
-                item.trailingBarButtonGroups = @[];
-            }
+            [self clearTextInputAssistentItemIfNeeded];
             
             if (self.inputController == nil || self.inputController != self.cameraKeyboardViewController) {
                 if (self.cameraKeyboardViewController == nil) {
                     [self createCameraKeyboardViewController];
                 }
-                self.audioRecordViewController = nil;
+
                 self.inputController = self.cameraKeyboardViewController;
             }
             
             self.singleTapGestureRecognizer.enabled = YES;
-            self.audioButton.selected = NO;
-            self.photoButton.selected = YES;
+            [self selectInputControllerButton:self.photoButton];
             break;
+            
+        case ConversationInputBarViewControllerModeEmojiInput:
+            [self clearTextInputAssistentItemIfNeeded];
+            
+            if (self.inputController == nil || self.inputController != self.emojiKeyboardViewController) {
+                if (self.emojiKeyboardViewController == nil) {
+                    [self createEmojiKeyboardViewController];
+                }
+                
+                self.inputController = self.emojiKeyboardViewController;
+            }
+
+            self.singleTapGestureRecognizer.enabled = NO;
+            [self selectInputControllerButton:self.emojiButton];
+            [Analytics.shared tagEmojiKeyboardOpenend:self.conversation];
+            break;
+
+        case ConversationInputBarViewControllerModeTimeoutConfguration:
+            [self clearTextInputAssistentItemIfNeeded];
+
+            if (self.inputController == nil || self.inputController != self.ephemeralKeyboardViewController) {
+                if (self.ephemeralKeyboardViewController == nil) {
+                    [self createEphemeralKeyboardViewController];
+                }
+
+                self.inputController = self.ephemeralKeyboardViewController;
+            }
+
+            self.singleTapGestureRecognizer.enabled = YES;
+            [self selectInputControllerButton:self.hourglassButton];
+            break;
+
+
+    }
+    
+    [self updateRightAccessoryView];
+}
+
+- (void)selectInputControllerButton:(IconButton *)button
+{
+    for (IconButton *otherButton in @[self.photoButton, self.audioButton, self.hourglassButton]) {
+        otherButton.selected = [button isEqual:otherButton];
+    }
+
+    [self updateEmojiButton:self.emojiButton];
+}
+
+- (void)clearTextInputAssistentItemIfNeeded
+{
+    if (nil != [UITextInputAssistantItem class]) {
+        UITextInputAssistantItem *item = self.inputBar.textView.inputAssistantItem;
+        item.leadingBarButtonGroups = @[];
+        item.trailingBarButtonGroups = @[];
     }
 }
 
@@ -499,6 +632,8 @@
     [_inputController.view removeFromSuperview];
     
     _inputController = inputController;
+    [self deallocateUnusedInputControllers];
+
     
     if (inputController != nil) {
         CGSize inputViewSize = [UIView wr_lastKeyboardSize];
@@ -522,6 +657,22 @@
     }
     
     [self.inputBar.textView reloadInputViews];
+}
+
+- (void)deallocateUnusedInputControllers
+{
+    if (! [self.cameraKeyboardViewController isEqual:self.inputController]) {
+        self.cameraKeyboardViewController = nil;
+    }
+    if (! [self.audioRecordKeyboardViewController isEqual:self.inputController]) {
+        self.audioRecordKeyboardViewController = nil;
+    }
+    if (! [self.emojiKeyboardViewController isEqual:self.inputController]) {
+        self.emojiKeyboardViewController = nil;
+    }
+    if (! [self.ephemeralKeyboardViewController isEqual:self.inputController]) {
+        self.ephemeralKeyboardViewController = nil;
+    }
 }
 
 - (void)keyboardDidHide:(NSNotification *)notification
@@ -605,6 +756,11 @@
 
 - (BOOL)textView:(UITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text
 {
+    if (!Settings.sharedSettings.disableSendButton) {
+        // The send button is not disabled, we allow newlines and don't send.
+        return YES;
+    }
+
     if ([text isEqualToString:@"\n"]) {
         [self sendOrEditText:textView.text];
         return NO;
@@ -655,7 +811,7 @@
 {
     ConfirmAssetViewController *confirmImageViewController = [[ConfirmAssetViewController alloc] init];
     confirmImageViewController.image = image;
-    confirmImageViewController.previewTitle = [self.conversation.displayName uppercaseStringWithCurrentLocale];
+    confirmImageViewController.previewTitle = [self.conversation.displayName uppercasedWithCurrentLocale];
     
     @weakify(self);
     
@@ -806,54 +962,6 @@
 
 @end
 
-@implementation ConversationInputBarViewController (VerifiedShield)
-
-- (void)verifiedShieldButtonPressed:(UIButton *)sender
-{
-    sender.userInteractionEnabled = NO;
-    [self setVerifiedLabelHidden:self.verifiedLabelView.alpha != 0 animated:YES completion:^{
-        sender.userInteractionEnabled = YES;
-    }];
-}
-
-- (void)setVerifiedLabelHidden:(BOOL)verifiedLabelHidden
-{
-    [self setVerifiedLabelHidden:verifiedLabelHidden animated:NO completion:nil];
-}
-
-- (void)hideVerifiedLabel
-{
-    [self setVerifiedLabelHidden:YES animated:YES completion:nil];
-}
-
-- (void)setVerifiedLabelHidden:(BOOL)hidden animated:(BOOL)animated completion:(dispatch_block_t)completion
-{
-    dispatch_block_t animations = ^{
-        self.verifiedLabelView.alpha = hidden ? 0.0f : 1.0f;
-    };
-    
-    void (^animationCompletion) (BOOL) = ^(BOOL finished) {
-        if (completion) {
-            completion();
-        }
-    };
-    
-    if (animated) {
-        [UIView wr_animateWithEasing:RBBEasingFunctionEaseInOutExpo
-                            duration:0.35
-                          animations:animations
-                          completion:animationCompletion];
-    } else {
-        animations();
-        animationCompletion(YES);
-    }
-    
-    [self.class cancelPreviousPerformRequestsWithTarget:self selector:@selector(hideVerifiedLabel) object:nil];
-    [self performSelector:@selector(hideVerifiedLabel) withObject:nil afterDelay:3.0f];
-}
-
-@end
-
 
 @implementation ConversationInputBarViewController (Giphy)
 
@@ -867,49 +975,30 @@
         [Analytics.shared tagMediaAction:ConversationMediaActionGif inConversation:self.conversation];
     
         NSString *searchTerm = [self.inputBar.textView.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        
-        GiphyViewController *giphyViewController = [[GiphyViewController alloc] initWithSearchTerm:searchTerm];
-        giphyViewController.conversation = self.conversation;
-        giphyViewController.analyticsTracker = self.analyticsTracker;
-        
-        giphyViewController.onCancel = ^{
-            [self dismissViewControllerAnimated:YES completion:^{
-                [self.inputBar.textView becomeFirstResponder];
-            }];
-        };
-        
-        @weakify(giphyViewController,self)
-        
-        giphyViewController.onConfirm = ^{
-            
-            @strongify(giphyViewController,self)
-            
-            [self clearInputBar];
-            [self dismissViewControllerAnimated:YES completion:nil];
-            [self.sendController sendTextMessage:[self messageFromSearchTerm:giphyViewController.searchTerm] withImageData:giphyViewController.imageData];
-        };
-        
-        [[ZClientViewController sharedZClientViewController] presentViewController:giphyViewController animated:YES completion:nil];
-        
+        GiphySearchViewController *giphySearchViewController = [[GiphySearchViewController alloc] initWithSearchTerm:searchTerm conversation:self.conversation];
+        giphySearchViewController.delegate = self;
+        [[ZClientViewController sharedZClientViewController] presentViewController:[giphySearchViewController wrapInsideNavigationController] animated:YES completion:^{
+            [[UIApplication sharedApplication] wr_updateStatusBarForCurrentControllerAnimated:YES];
+        }];
     }
-}
-
-- (NSString *)messageFromSearchTerm:(NSString *)searchTerm
-{
-    NSString *messageText = nil;
-    
-    if ([searchTerm isEqualToString:@""]) {
-        messageText = [NSString stringWithFormat:NSLocalizedString(@"giphy.conversation.random_message", nil), searchTerm];
-    }
-    else {
-        
-        messageText = [NSString stringWithFormat:NSLocalizedString(@"giphy.conversation.message", nil), searchTerm];
-    }
-    
-    return messageText;
 }
 
 @end
+
+
+
+#pragma mark - SendButton
+
+@implementation ConversationInputBarViewController (Sending)
+
+- (void)sendButtonPressed:(id)sender
+{
+    [self sendOrEditText:self.inputBar.textView.text];
+}
+
+@end
+
+
 
 #pragma mark - PingButton
 
@@ -945,28 +1034,9 @@
 @implementation ConversationInputBarViewController (ZMConversationObserver)
 
 - (void)conversationDidChange:(ConversationChangeInfo *)change
-{
-    if (change.messagesChanged) {
-        
-        if (self.conversation.messages.count != 0) {
-            id<ZMConversationMessage>lastMessage = self.conversation.messages.lastObject;
-            
-            if (! [lastMessage.sender isSelfUser] && ([NSDate timeIntervalSinceReferenceDate] - [lastMessage.serverTimestamp timeIntervalSinceReferenceDate]) < 5.0f) {
-                NSMutableSet *currentTyping = [NSMutableSet setWithSet:self.typingUsers];
-                
-                [currentTyping removeObject:lastMessage.sender];
-                
-                self.typingUsers = currentTyping;
-            }
-        }
-    }
-    
+{    
     if (change.participantsChanged || change.connectionStateChanged) {
         [self updateInputBarVisibility];
-    }
-    
-    if (change.securityLevelChanged) {
-        [self updateRightAccessoryView];
     }
 }
 
@@ -1023,6 +1093,29 @@
     else {
         return CGRectContainsPoint(gestureRecognizer.view.bounds, [touch locationInView:gestureRecognizer.view]);
     }
+}
+
+@end
+
+@implementation ConversationInputBarViewController (GiphySearchViewControllerDelegate)
+
+- (void)giphySearchViewController:(GiphySearchViewController *)giphySearchViewController didSelectImageData:(NSData *)imageData searchTerm:(NSString *)searchTerm
+{
+    [[Analytics shared] tagMediaSentPictureSourceOtherInConversation:self.conversation source:ConversationMediaPictureSourceGiphy];
+    [self clearInputBar];
+    [self dismissViewControllerAnimated:YES completion:nil];
+    
+    
+    
+    NSString *messageText = nil;
+    
+    if ([searchTerm isEqualToString:@""]) {
+        messageText = [NSString stringWithFormat:NSLocalizedString(@"giphy.conversation.random_message", nil), searchTerm];
+    } else {
+        messageText = [NSString stringWithFormat:NSLocalizedString(@"giphy.conversation.message", nil), searchTerm];
+    }
+    
+    [self.sendController sendTextMessage:messageText withImageData:imageData];
 }
 
 @end

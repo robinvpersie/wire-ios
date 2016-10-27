@@ -26,26 +26,33 @@ class ReactionsListViewControllerTests: ZMSnapshotTestCase {
 
     override func setUp() {
         super.setUp()
-        snapshotBackgroundColor = .whiteColor()
+        snapshotBackgroundColor = UIColor.white
     }
     
     func testThatItRendersReactionsListViewController() {
-        let sut = ReactionsListViewController(message: message)
+        let sut = ReactionsListViewController(message: message, showsStatusBar: true)
+        sut.beginAppearanceTransition(true, animated: false)
+        sut.endAppearanceTransition()
+        verify(view: sut.view)
+    }
+    
+    func testThatItRendersReactionsListViewController_NoStatusBar() {
+        let sut = ReactionsListViewController(message: message, showsStatusBar: false)
         sut.beginAppearanceTransition(true, animated: false)
         sut.endAppearanceTransition()
         verify(view: sut.view)
     }
     
     var message: ZMConversationMessage {
-        let message = MockMessageFactory.textMessageWithText("Hello")
-        message.deliveryState = .Sent
+        let message = MockMessageFactory.textMessage(withText: "Hello")
+        message?.deliveryState = .sent
         
-        let users = MockUser.mockUsers().map { $0 as! ZMUser }
-        message.backingUsersReaction = [
+        let users = MockUser.mockUsers().map { $0 }
+        message?.backingUsersReaction = [
             ZMMessageReaction.Like.rawValue: users
         ]
 
-        return message
+        return message!
     }
     
 }

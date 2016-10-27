@@ -29,7 +29,7 @@ NSString * const SettingsColorSchemeChangedNotification = @"SettingsColorSchemeC
 NSString * const UserDefaultExtras = @"ZDevOptionExtras";
 NSString * const UserDefaultMarkdown = @"UserDefaultMarkdown";
 NSString * const UserDefaultChatHeadsDisabled = @"ZDevOptionChatHeadsDisabled";
-NSString * const UserDefaultCursorTutorialCompleted = @"CursorTutorialCompleted";
+NSString * const UserDefaultLikeTutorialCompleted = @"LikeTutorialCompleted";
 NSString * const UserDefaultLastPushAlertDate = @"LastPushAlertDate";
 NSString * const UserDefaultVoIPNotificationsOnly = @"VoIPNotificationsOnly";
 
@@ -53,6 +53,11 @@ NSString * const UserDefaultDisableAVS = @"ZMDisableAVS";
 NSString * const UserDefaultDisableUI = @"ZMDisableUI";
 NSString * const UserDefaultDisableHockey = @"ZMDisableHockey";
 NSString * const UserDefaultDisableAnalytics = @"ZMDisableAnalytics";
+NSString * const UserDefaultSendButtonDisabled = @"SendButtonDisabled";
+
+NSString * const UserDefaultTwitterOpeningRawValue = @"TwitterOpeningRawValue";
+NSString * const UserDefaultMapsOpeningRawValue = @"MapsOpeningRawValue";
+NSString * const UserDefaultBrowserOpeningRawValue = @"BrowserOpeningRawValue";
 
 
 @interface Settings ()
@@ -82,7 +87,7 @@ NSString * const UserDefaultDisableAnalytics = @"ZMDisableAnalytics";
 {
     return @[UserDefaultMarkdown,
              UserDefaultChatHeadsDisabled,
-             UserDefaultCursorTutorialCompleted,
+             UserDefaultLikeTutorialCompleted,
              UserDefaultLastViewedConversation,
              UserDefaultLastViewedScreen,
              AVSMediaManagerPersistentIntensity,
@@ -99,7 +104,11 @@ NSString * const UserDefaultDisableAnalytics = @"ZMDisableAnalytics";
              UserDefaultDisableHockey,
              UserDefaultDisableAnalytics,
              UserDefaultLastUserLocation,
-             UserDefaultPreferredCamera
+             UserDefaultPreferredCamera,
+             UserDefaultSendButtonDisabled,
+             UserDefaultTwitterOpeningRawValue,
+             UserDefaultMapsOpeningRawValue,
+             UserDefaultBrowserOpeningRawValue
              ];
 }
 
@@ -119,7 +128,7 @@ NSString * const UserDefaultDisableAnalytics = @"ZMDisableAnalytics";
     self = [super init];
     if (self) {
         [self restoreLastUsedIntensityLevel];
-
+        [self loadEnabledLogs];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidEnterBackground:) name:UIApplicationDidEnterBackgroundNotification object:nil];
     }
     return self;
@@ -264,14 +273,14 @@ NSString * const UserDefaultDisableAnalytics = @"ZMDisableAnalytics";
     [self.defaults setInteger:preferredCamera forKey:UserDefaultPreferredCamera];
 }
 
-- (BOOL)cursorTutorialCompleted
+- (BOOL)likeTutorialCompleted
 {
-    return [self.defaults boolForKey:UserDefaultCursorTutorialCompleted];
+    return [self.defaults boolForKey:UserDefaultLikeTutorialCompleted];
 }
 
-- (void)setCursorTutorialCompleted:(BOOL)cursorTutorialCompleted
+- (void)setLikeTutorialCompleted:(BOOL)likeTutorialCompleted
 {
-    [self.defaults setBool:cursorTutorialCompleted forKey:UserDefaultCursorTutorialCompleted];
+    [self.defaults setBool:likeTutorialCompleted forKey:UserDefaultLikeTutorialCompleted];
     [self.defaults synchronize];
 }
 
@@ -363,6 +372,16 @@ NSString * const UserDefaultDisableAnalytics = @"ZMDisableAnalytics";
     return [self.defaults objectForKey:UserDefaultPingSoundName];
 }
 
+- (BOOL)disableSendButton
+{
+    return [self.defaults boolForKey:UserDefaultSendButtonDisabled];
+}
+
+- (void)setDisableSendButton:(BOOL)disableSendButton
+{
+    [self.defaults setBool:disableSendButton forKey:UserDefaultSendButtonDisabled];
+}
+
 #pragma mark - Features disable keys
 
 - (BOOL)disableUI
@@ -409,6 +428,36 @@ NSString * const UserDefaultDisableAnalytics = @"ZMDisableAnalytics";
     [self.defaults synchronize];
 }
 
+- (NSInteger)twitterLinkOpeningOptionRawValue
+{
+    return [self.defaults integerForKey:UserDefaultTwitterOpeningRawValue];
+}
+
+- (void)setTwitterLinkOpeningOptionRawValue:(NSInteger)twitterLinkOpeningOptionRawValue
+{
+    [self.defaults setInteger:twitterLinkOpeningOptionRawValue forKey:UserDefaultTwitterOpeningRawValue];
+}
+
+- (NSInteger)mapsLinkOpeningOptionRawValue
+{
+    return [self.defaults integerForKey:UserDefaultMapsOpeningRawValue];
+}
+
+- (void)setMapsLinkOpeningOptionRawValue:(NSInteger)mapsLinkOpeningOptionRawValue
+{
+    [self.defaults setInteger:mapsLinkOpeningOptionRawValue forKey:UserDefaultMapsOpeningRawValue];
+}
+
+- (NSInteger)browserLinkOpeningOptionRawValue
+{
+    return [self.defaults integerForKey:UserDefaultBrowserOpeningRawValue];
+}
+
+- (void)setBrowserLinkOpeningOptionRawValue:(NSInteger)browserLinkOpeningOptionRawValue
+{
+    [self.defaults setInteger:browserLinkOpeningOptionRawValue forKey:UserDefaultBrowserOpeningRawValue];
+}
+
 @end
 
 @implementation Settings (MediaManager)
@@ -433,3 +482,4 @@ NSString * const UserDefaultDisableAnalytics = @"ZMDisableAnalytics";
 }
 
 @end
+

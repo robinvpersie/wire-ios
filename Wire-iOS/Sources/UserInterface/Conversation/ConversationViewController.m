@@ -520,7 +520,7 @@
             didScrollWithOffsetFromBottom:(CGFloat)offset
                         withLatestMessage:(id<ZMConversationMessage>)message
 {
-    self.inputBarController.inputBar.separatorEnabled = ! contentViewController.isScrolledToBottom;
+    self.inputBarController.inputBarOverlapsContent = ! contentViewController.isScrolledToBottom;
 }
 
 - (void)didTapOnUserAvatar:(ZMUser *)user view:(UIView *)view
@@ -577,14 +577,14 @@
     }];
 }
 
-- (void)conversationContentViewController:(ConversationContentViewController *)contentViewController didTriggerResendingMessage:(ZMMessage *)message
+- (void)conversationContentViewController:(ConversationContentViewController *)contentViewController didTriggerResendingMessage:(id <ZMConversationMessage>)message
 {
     [[ZMUserSession sharedSession] enqueueChanges:^{
         [message resend];
     }];
 }
 
-- (void)conversationContentViewController:(ConversationContentViewController *)contentViewController didTriggerEditingMessage:(ZMMessage *)message
+- (void)conversationContentViewController:(ConversationContentViewController *)contentViewController didTriggerEditingMessage:(id <ZMConversationMessage>)message
 {
     NSString *text = message.textMessageData.messageText;
     
@@ -623,7 +623,7 @@
     [UIView animateWithDuration:0.33 delay:0 options:UIViewAnimationOptionCurveEaseIn animations:^{
         snapshotView.center = targetCenter;
         snapshotView.alpha = 0;
-        snapshotView.transform = CGAffineTransformConcat(snapshotView.transform, CGAffineTransformMakeScale(0.01, 0.01));
+        snapshotView.transform = CGAffineTransformMakeScale(0.01, 0.01);
     } completion:^(__unused BOOL finished) {
         [snapshotView removeFromSuperview];
         [self.inputBarController bounceCameraIcon];
@@ -879,6 +879,10 @@
     if (note.nameChanged) {
         [self setupNavigatiomItem];
     }
+
+    if (note.securityLevelChanged) {
+        [self.titleView configure:self.conversation];
+    }
 }
 
 - (void)presentConversationDegradedActionSheetControllerForUsers:(NSSet<ZMUser *> *)users
@@ -896,7 +900,7 @@
                                                       if (self.conversation.conversationType == ZMConversationTypeOneOnOne) {
                                                           ZMUser *user = self.conversation.connectedUser;
                                                           if (user.clients.count == 1) {
-                                                              ProfileClientViewController *userClientController = [[ProfileClientViewController alloc] initWithClient:user.clients.anyObject];
+                                                              ProfileClientViewController *userClientController = [[ProfileClientViewController alloc] initWithClient:user.clients.anyObject fromConversation:YES];
                                                               userClientController.showBackButton = NO;
                                                               [navigationController pushViewController:userClientController animated:YES];
                                                           } else {

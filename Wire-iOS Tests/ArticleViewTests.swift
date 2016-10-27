@@ -27,7 +27,7 @@ class ArticleViewTests: ZMSnapshotTestCase {
     
     override func setUp() {
         super.setUp()
-        accentColor = .VividRed
+        accentColor = .vividRed
     }
     
     /// MARK - Fixture
@@ -39,7 +39,6 @@ class ArticleViewTests: ZMSnapshotTestCase {
         
         let textMessageData = MockTextMessageData()
         textMessageData.linkPreview = article
-        
         return textMessageData
     }
     
@@ -50,7 +49,8 @@ class ArticleViewTests: ZMSnapshotTestCase {
         
         let textMessageData = MockTextMessageData()
         textMessageData.linkPreview = article
-        textMessageData.imageData = UIImageJPEGRepresentation(imageInTestBundleNamed("unsplash_matterhorn.jpg"), 0.9)
+        textMessageData.imageDataIdentifier = "image-id"
+        textMessageData.imageData = UIImageJPEGRepresentation(image(inTestBundleNamed: "unsplash_matterhorn.jpg"), 0.9)
         textMessageData.hasImageData = true
         
         return textMessageData
@@ -64,7 +64,8 @@ class ArticleViewTests: ZMSnapshotTestCase {
         
         let textMessageData = MockTextMessageData()
         textMessageData.linkPreview = article
-        textMessageData.imageData = UIImageJPEGRepresentation(imageInTestBundleNamed("unsplash_matterhorn.jpg"), 0.9)
+        textMessageData.imageDataIdentifier = "image-id"
+        textMessageData.imageData = UIImageJPEGRepresentation(image(inTestBundleNamed: "unsplash_matterhorn.jpg"), 0.9)
         textMessageData.hasImageData = true
         
         return textMessageData
@@ -91,7 +92,7 @@ class ArticleViewTests: ZMSnapshotTestCase {
     func testArticleViewWithoutPicture() {
         sut = ArticleView(withImagePlaceholder: false)
         sut.translatesAutoresizingMaskIntoConstraints = false
-        sut.configure(withTextMessageData: articleWithoutPicture())
+        sut.configure(withTextMessageData: articleWithoutPicture(), obfuscated: false)
         sut.layoutIfNeeded()
         
         verifyInAllPhoneWidths(view: sut)
@@ -100,7 +101,7 @@ class ArticleViewTests: ZMSnapshotTestCase {
     func testArticleViewWithPicture() {
         sut = ArticleView(withImagePlaceholder: true)
         sut.translatesAutoresizingMaskIntoConstraints = false
-        sut.configure(withTextMessageData: articleWithPicture())
+        sut.configure(withTextMessageData: articleWithPicture(), obfuscated: false)
         sut.layoutIfNeeded()
         
         verifyInAllPhoneWidths(view: sut)
@@ -113,8 +114,8 @@ class ArticleViewTests: ZMSnapshotTestCase {
         sut.layer.beginTime = 0
         sut.translatesAutoresizingMaskIntoConstraints = false
         let textMessageData = articleWithPicture()
-        textMessageData.imageData = .None
-        sut.configure(withTextMessageData: textMessageData)
+        textMessageData.imageData = .none
+        sut.configure(withTextMessageData: textMessageData, obfuscated: false)
         sut.layoutIfNeeded()
         
         verifyInAllPhoneWidths(view: sut)
@@ -123,7 +124,7 @@ class ArticleViewTests: ZMSnapshotTestCase {
     func testArticleViewWithTruncatedURL() {
         sut = ArticleView(withImagePlaceholder: true)
         sut.translatesAutoresizingMaskIntoConstraints = false
-        sut.configure(withTextMessageData: articleWithLongURL())
+        sut.configure(withTextMessageData: articleWithLongURL(), obfuscated: false)
         sut.layoutIfNeeded()
         
         verifyInAllPhoneWidths(view: sut)
@@ -132,9 +133,18 @@ class ArticleViewTests: ZMSnapshotTestCase {
     func testArticleViewWithTwitterStatusWithoutPicture() {
         sut = ArticleView(withImagePlaceholder: false)
         sut.translatesAutoresizingMaskIntoConstraints = false
-        sut.configure(withTextMessageData: twitterStatusWithoutPicture())
+        sut.configure(withTextMessageData: twitterStatusWithoutPicture(), obfuscated: false)
         sut.layoutIfNeeded()
         
+        verifyInAllPhoneWidths(view: sut)
+    }
+
+    func testArticleViewObfuscated() {
+        sut = ArticleView(withImagePlaceholder: true)
+        sut.translatesAutoresizingMaskIntoConstraints = false
+        sut.configure(withTextMessageData: articleWithPicture(), obfuscated: true)
+        sut.layoutIfNeeded()
+
         verifyInAllPhoneWidths(view: sut)
     }
 }

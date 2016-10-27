@@ -21,7 +21,7 @@ import Foundation
 import zmessaging
 
 public enum ZMMessageReaction: String {
-    case Like = "💖"
+    case Like = "❤️"
 }
 
 extension ZMConversationMessage {
@@ -30,17 +30,21 @@ extension ZMConversationMessage {
         guard let conversation = self.conversation else {
             return false
         }
-        
-        let participatesInConversation = conversation.activeParticipants.containsObject(ZMUser.selfUser())
-        let sentOrDelivered = [ZMDeliveryState.Sent, .Delivered].contains(deliveryState)
-        let likableType = Message.isNormalMessage(self) && !Message.isKnockMessage(self)
-        return participatesInConversation && sentOrDelivered && likableType
+
+        let participatesInConversation = conversation.activeParticipants.contains(ZMUser.selfUser())
+        let sentOrDelivered = [ZMDeliveryState.sent, ZMDeliveryState.delivered].contains(deliveryState)
+        let likableType = Message.isNormalMessage(self) && !Message.isKnock(self)
+        return participatesInConversation && sentOrDelivered && likableType && !isObfuscated && !isEphemeral
     }
 
     var liked: Bool {
         set {
-            let reaction: String? = newValue ? ZMMessageReaction.Like.rawValue : .None
-            ZMMessage.addReaction(reaction, toMessage: self)
+            if newValue {
+                ZMMessage.addReaction(ZMMessageReaction.Like.rawValue, toMessage: self)
+            }
+            else {
+                ZMMessage.removeReaction(onMessage: self)
+            }
         }
         get {
             return likers().contains(.selfUser())
@@ -50,7 +54,7 @@ extension ZMConversationMessage {
     func hasReactions() -> Bool {
         return self.usersReaction.map { (_, users) in
                 return users.count
-            }.reduce(0, combine: +) > 0
+            }.reduce(0, +) > 0
     }
     
     func likers() -> [ZMUser] {
@@ -64,20 +68,24 @@ extension ZMConversationMessage {
 }
 
 public extension Message {
+    
+    @objc static func setLikedMessage(_ message: ZMConversationMessage, liked: Bool) {
+        return message.liked = liked
+    }
 
-    @objc static func isLikedMessage(message: ZMMessage) -> Bool {
+    @objc static func isLikedMessage(_ message: ZMConversationMessage) -> Bool {
         return message.liked
     }
     
-    @objc static func hasReactions(message: ZMMessage) -> Bool {
+    @objc static func hasReactions(_ message: ZMConversationMessage) -> Bool {
         return message.hasReactions()
     }
     
-    @objc static func hasLikers(message: ZMMessage) -> Bool {
+    @objc static func hasLikers(_ message: ZMConversationMessage) -> Bool {
         return !message.likers().isEmpty
     }
 
-    class func messageCanBeLiked(message: ZMMessage) -> Bool {
+    class func messageCanBeLiked(_ message: ZMConversationMessage) -> Bool {
         return message.canBeLiked
     }
 

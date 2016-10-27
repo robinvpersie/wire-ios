@@ -24,7 +24,7 @@
 #import "zmessaging+iOS.h"
 #import "WireStyleKit.h"
 #import "WAZUIMagicIOS.h"
-#import "NSString+Wire.h"
+#import "Wire-Swift.h"
 #import "UIColor+Mixing.h"
 #import "Analytics+iOS.h"
 #import "UIColor+WR_ColorScheme.h"
@@ -50,6 +50,10 @@
                                                                  0, [WAZUIMagic floatForIdentifier:@"content.system_message.right_margin"]);
         [self createMissedCallViews];
         [self createConstraints];
+        
+        NSMutableArray *accessibilityElements = [NSMutableArray arrayWithArray:self.accessibilityElements];
+        [accessibilityElements addObjectsFromArray:@[self.subtitleLabel]];
+        self.accessibilityElements = accessibilityElements;
     }
     
     return self;
@@ -87,6 +91,8 @@
     self.subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     self.subtitleLabel.font = [UIFont fontWithMagicIdentifier:@"style.text.small.font_spec_light"];
     self.subtitleLabel.textColor = [UIColor wr_colorFromColorScheme:ColorSchemeColorTextForeground];
+    self.subtitleLabel.accessibilityIdentifier = @"PingedLabel";
+    self.subtitleLabel.isAccessibilityElement = YES;
     [self.messageContentView addSubview:self.subtitleLabel];
 }
 
@@ -119,9 +125,9 @@
     
     NSString *subtitleText = nil;
     if (message.sender.isSelfUser) {
-        subtitleText = [NSLocalizedString(@"content.system.you_wanted_to_talk", nil) uppercaseStringWithCurrentLocale];
+        subtitleText = [NSLocalizedString(@"content.system.you_wanted_to_talk", nil) uppercasedWithCurrentLocale];
     } else {
-        subtitleText = [[NSString stringWithFormat:NSLocalizedString(@"content.system.other_wanted_to_talk", ), message.sender.displayName] uppercaseStringWithCurrentLocale];
+        subtitleText = [[NSString stringWithFormat:NSLocalizedString(@"content.system.other_wanted_to_talk", ), message.sender.displayName] uppercasedWithCurrentLocale];
     }
     
     self.subtitleLabel.attributedText = [[NSAttributedString alloc] initWithString:subtitleText attributes:@{ NSParagraphStyleAttributeName: self.subtitleParagraphStyle }];

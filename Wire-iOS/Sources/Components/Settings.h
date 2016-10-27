@@ -33,8 +33,7 @@ typedef NS_ENUM(NSUInteger, SettingsColorScheme) {
 typedef NS_ENUM (NSUInteger, SettingsLastScreen) {
     SettingsLastScreenNone = 0,
     SettingsLastScreenList,
-    SettingsLastScreenConversation,
-    SettingsLastScreenSelfProfile
+    SettingsLastScreenConversation
 };
 
 extern NSString * const SettingsColorSchemeChangedNotification;
@@ -42,7 +41,7 @@ extern NSString * const SettingsColorSchemeChangedNotification;
 extern NSString * const UserDefaultExtras;
 extern NSString * const UserDefaultMarkdown;
 extern NSString * const UserDefaultChatHeadsDisabled;
-extern NSString * const UserDefaultCursorTutorialCompleted;
+extern NSString * const UserDefaultLikeTutorialCompleted;
 extern NSString * const UserDefaultLastPushAlertDate;
 extern NSString * const UserDefaultContactTipWasDisplayed;
 
@@ -66,16 +65,22 @@ extern NSString * const UserDefaultDisableUI;
 extern NSString * const UserDefaultDisableHockey;
 extern NSString * const UserDefaultDisableAnalytics;
 
+extern NSString * const UserDefaultSendButtonDisabled;
+
+extern NSString * const UserDefaultTwitterOpeningRawValue;
+extern NSString * const UserDefaultMapsOpeningRawValue;
+extern NSString * const UserDefaultBrowserOpeningRawValue;
+
 /// Model object for locally stored (not in SE or AVS) user app settings
 @interface Settings : NSObject
 
 @property (nonatomic) BOOL enableExtras;
 @property (nonatomic) BOOL chatHeadsDisabled;
 @property (nonatomic) BOOL contactTipWasDisplayed;
-@property (nonatomic, getter=isGroupCallsEnabled) BOOL groupCallsEnabled;
-@property (nonatomic) BOOL cursorTutorialCompleted;
+@property (nonatomic) BOOL likeTutorialCompleted;
 @property (nonatomic) BOOL enableMarkdown;
 @property (nonatomic) BOOL shouldRegisterForVoIPNotificationsOnly;
+@property (nonatomic) BOOL disableSendButton;
 
 @property (nonatomic, readonly) BOOL skipFirstTimeUseChecks;
 @property (nonatomic) NSDate *lastPushAlertDate;
@@ -91,6 +96,10 @@ extern NSString * const UserDefaultDisableAnalytics;
 @property (nonatomic) NSString *messageSoundName;
 @property (nonatomic) NSString *callSoundName;
 @property (nonatomic) NSString *pingSoundName;
+
+@property (nonatomic) NSInteger twitterLinkOpeningOptionRawValue;
+@property (nonatomic) NSInteger browserLinkOpeningOptionRawValue;
+@property (nonatomic) NSInteger mapsLinkOpeningOptionRawValue;
 
 + (instancetype)sharedSettings;
 

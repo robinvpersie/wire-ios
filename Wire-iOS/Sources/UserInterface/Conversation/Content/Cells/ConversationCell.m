@@ -86,6 +86,10 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
 
 @property (nonatomic) NSLayoutConstraint *toolboxHeightConstraint;
 
+@property (nonatomic, strong) UIView *countdownContainerView;
+@property (nonatomic, strong) DestructionCountdownView *countdownView;
+@property (nonatomic, strong) CADisplayLink *destructionLink;
+
 @end
 
 @interface ConversationCell (MessageToolboxViewDelegate) <MessageToolboxViewDelegate>
@@ -125,6 +129,7 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
         // NOTE Layout margins are not being preserved beyond the UITableViewCell.contentView so we must re-apply them
         // here until we re-factor the the ConversationCell
         self.messageContentView.layoutMargins = layoutMargins;
+        self.messageToolboxView.layoutMargins = layoutMargins;
     }
     
     return self;
@@ -151,6 +156,7 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
     
     self.messageContentView = [[UIView alloc] init];
     self.messageContentView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.messageContentView.accessibilityElementsHidden = NO;
     [self.contentView addSubview:self.messageContentView];
     
     
@@ -193,7 +199,16 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
     self.messageToolboxView.translatesAutoresizingMaskIntoConstraints = NO;
     self.messageToolboxView.isAccessibilityElement = YES;
     self.messageToolboxView.accessibilityIdentifier = @"MessageToolbox";
+    self.messageToolboxView.accessibilityLabel = @"MessageToolbox";
     [self.contentView addSubview:self.messageToolboxView];
+
+    self.countdownView = [[DestructionCountdownView alloc] init];
+
+    self.countdownContainerView = [[UIView alloc] initForAutoLayout];
+    [self.countdownContainerView addSubview:self.countdownView];
+    [self.contentView addSubview:self.countdownContainerView];
+
+    self.countdownContainerView.hidden = YES;
     
     [self createLikeButton];
     
@@ -201,6 +216,12 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
     self.doubleTapGestureRecognizer.numberOfTapsRequired = 2;
     self.doubleTapGestureRecognizer.delaysTouchesBegan = YES;
     [self.contentView addGestureRecognizer:self.doubleTapGestureRecognizer];
+    
+    self.contentView.isAccessibilityElement = YES;
+    
+    NSMutableArray *accessibilityElements = [NSMutableArray arrayWithArray:self.accessibilityElements];
+    [accessibilityElements addObjectsFromArray:@[self.messageContentView, self.authorLabel, self.authorImageView, self.unreadDotView, self.messageToolboxView, self.likeButton]];
+    self.accessibilityElements = accessibilityElements;
 }
 
 - (void)prepareForReuse
@@ -213,6 +234,7 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
     self.topMarginConstraint.constant = 0;
     self.authorImageTopMarginConstraint.constant = 0;
     self.beingEdited = NO;
+    [self updateCountdownView];
 }
 
 - (void)willDisplayInTableView
@@ -222,12 +244,23 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
     }
     
     [self.contentView bringSubviewToFront:self.likeButton];
+
+    if ([self.delegate respondsToSelector:@selector(conversationCellShouldStartDestructionTimer:)] &&
+        [self.delegate conversationCellShouldStartDestructionTimer:self]) {
+        [self updateCountdownView];
+        if ([self.message startSelfDestructionIfNeeded]) {
+            [self startCountdownAnimationIfNeeded:self.message];
+        }
+    }
+
+    [self.messageContentView bringSubviewToFront:self.countdownContainerView];
 }
 
 - (void)didEndDisplayingInTableView
 {
     [self.burstTimestampTimer invalidate];
     self.burstTimestampTimer = nil;
+    [self tearDownCountdownLink];
 }
 
 - (void)createBaseConstraints
@@ -275,12 +308,21 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
         self.toolboxHeightConstraint = [self.messageToolboxView autoSetDimension:ALDimensionHeight toSize:0];
     }];
     [self.messageToolboxView autoPinEdge:ALEdgeTop toEdge:ALEdgeBottom ofView:self.messageContentView];
-    [self.messageToolboxView autoPinEdgeToSuperviewMargin:ALEdgeRight];
-    [self.messageToolboxView autoPinEdgeToSuperviewMargin:ALEdgeLeft];
+    [self.messageToolboxView autoPinEdgeToSuperviewEdge:ALEdgeRight];
+    [self.messageToolboxView autoPinEdgeToSuperviewEdge:ALEdgeLeft];
     self.messageContentBottomMarginConstraint = [self.messageToolboxView autoPinEdgeToSuperviewEdge:ALEdgeBottom];
     
     [self.likeButton autoAlignAxis:ALAxisHorizontal toSameAxisOfView:self.messageToolboxView];
     [self.likeButton autoAlignAxis:ALAxisVertical toSameAxisOfView:self.authorImageContainer];
+
+    [self.countdownView autoPinEdgesToSuperviewEdgesWithInsets:UIEdgeInsetsMake(2, 2, 2, 2)];
+    [self.countdownContainerView autoPinEdgeToSuperviewEdge:ALEdgeRight withInset:8];
+}
+
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+    self.countdownContainerView.layer.cornerRadius = CGRectGetWidth(self.countdownContainerView.bounds) / 2;
 }
 
 - (void)updateConstraintConstants
@@ -293,8 +335,6 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
     self.authorLabel.hidden                      = ! self.layoutProperties.showSender;
     self.authorImageContainer.hidden             = ! self.layoutProperties.showSender;
     self.burstTimestampHeightConstraint.active   = ! self.layoutProperties.showBurstTimestamp;
-    
-    [self updateToolboxVisibilityAnimated:NO];
 }
 
 - (void)configureForMessage:(id<ZMConversationMessage>)message layoutProperties:(ConversationCellLayoutProperties *)layoutProperties;
@@ -311,15 +351,25 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
         [self updateBurstTimestamp];
     }
     
-    [self configureReactionsForMessage:message];
+    [self configureLikeButtonForMessage:message];
     
-    [self.messageToolboxView configureForMessage:message animated:NO];
-    [self.messageToolboxView setForceShowTimestamp:self.selected animated:NO];
     [self updateConstraintConstants];
+    [self updateToolboxVisibilityAnimated:NO];
+    [self startCountdownAnimationIfNeeded:message];
+    [self updateCountdownView];
+}
+
+- (void)willDeleteMessage
+{
+    // no-op
 }
 
 - (void)updateToolboxVisibilityAnimated:(BOOL)animated
 {
+    if (nil == self.message) {
+        return;
+    }
+    
     ZMDeliveryState deliveryState = self.message.deliveryState;
     
     BOOL shouldShowPendingDeliveryState = self.message.conversation.conversationType == ZMConversationTypeOneOnOne;
@@ -335,9 +385,12 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
     
     self.toolboxHeightConstraint.active = ! shouldBeVisible;
     
+    if (shouldBeVisible) {
+        [self.messageToolboxView configureForMessage:self.message forceShowTimestamp:self.selected animated:animated];
+    }
+    
     if (animated) {
         if (shouldBeVisible) {
-            [self.messageToolboxView configureForMessage:self.message animated:NO];
             [UIView animateWithDuration:0.35 animations:^{
                 self.messageToolboxView.alpha = 1;
             } completion:^(BOOL finished) {
@@ -438,6 +491,10 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
 
 - (void)showMenu;
 {
+    if (self.message.isEphemeral) {
+        return;
+    }
+
     BOOL shouldBecomeFirstResponder = YES;
     if ([self.delegate respondsToSelector:@selector(conversationCell:shouldBecomeFirstResponderWhenShowMenuWithCellType:)]) {
         shouldBecomeFirstResponder = [self.delegate conversationCell:self shouldBecomeFirstResponderWhenShowMenuWithCellType:[self messageType]];
@@ -529,7 +586,6 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
 - (void)setSelected:(BOOL)selected animated:(BOOL)animated
 {
     [super setSelected:selected animated:animated];
-    [self.messageToolboxView setForceShowTimestamp:selected animated:YES];
     [self updateToolboxVisibilityAnimated:YES];
 }
 
@@ -550,21 +606,66 @@ const NSTimeInterval ConversationCellSelectionAnimationDuration = 0.33;
 
 - (BOOL)updateForMessage:(MessageChangeInfo *)change
 {
-    if (change.deliveryStateChanged || change.reactionsChanged) {
-        [self.messageToolboxView setForceShowTimestamp:NO animated:NO];
-    }
-    
     if (change.reactionsChanged) {
-        [self configureReactionsForMessage:change.message];
+        [self configureLikeButtonForMessage:change.message];
     }
     
     if (change.userChangeInfo.nameChanged || change.senderChanged) {
         [self updateSenderAndSenderImage:change.message];
     }
+
+    if (change.isObfuscatedChanged) {
+        [self configureForMessage:change.message layoutProperties:self.layoutProperties];
+        [self updateCountdownView];
+    }
+
+    if ([self.delegate respondsToSelector:@selector(conversationCellShouldStartDestructionTimer:)] &&
+        [self.delegate conversationCellShouldStartDestructionTimer:self]) {
+        if ([self.message startSelfDestructionIfNeeded]) {
+            [self startCountdownAnimationIfNeeded:self.message];
+        }
+    }
+
+    [self updateToolboxVisibilityAnimated:change.reactionsChanged];
     
-    [self updateToolboxVisibilityAnimated:YES];
-    
-    return change.reactionsChanged || (change.deliveryStateChanged);
+    return change.reactionsChanged || change.deliveryStateChanged || change.isObfuscatedChanged;
+}
+
+#pragma mark - Countdown Timer
+
+- (void)tearDownCountdownLink
+{
+    [self.destructionLink invalidate];
+    self.destructionLink = nil;
+}
+
+- (void)startCountdownAnimationIfNeeded:(id<ZMConversationMessage>)message
+{
+    if (self.showDestructionCountdown && nil == self.destructionLink) {
+        self.destructionLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(updateCountdownView)];
+        [self.destructionLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    }
+}
+
+- (BOOL)showDestructionCountdown
+{
+    return self.message.isEphemeral && !self.message.isObfuscated;
+}
+
+- (void)updateCountdownView
+{
+    self.countdownContainerView.hidden = !self.showDestructionCountdown;
+
+    if (! self.showDestructionCountdown && nil != self.destructionLink) {
+        [self tearDownCountdownLink];
+        return;
+    }
+
+    if (!self.countdownContainerView.hidden && nil != self.message.destructionDate) {
+        CGFloat fraction = self.message.destructionDate.timeIntervalSinceNow / self.message.deletionTimeout;
+        [self.countdownView updateWithFraction:fraction];
+        [self.messageToolboxView updateTimestamp:self.message];
+    }
 }
 
 @end

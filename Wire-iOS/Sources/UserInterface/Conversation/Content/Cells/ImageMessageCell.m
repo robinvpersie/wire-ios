@@ -71,6 +71,7 @@
 @property (nonatomic, strong) IconButton *sketchButton;
 @property (nonatomic, strong) IconButton *fullScreenButton;
 @property (nonatomic, strong) UIView *imageViewContainer;
+@property (nonatomic, strong) UIView *obfuscationView;
 @property (nonatomic) UIEdgeInsets defaultLayoutMargins;
 @property (nonatomic) SavableImage *savableImage;
 
@@ -154,7 +155,9 @@ static ImageCache *imageCache(void)
     [super prepareForReuse];
     
     self.originalImageSize = CGSizeZero;
-    
+    self.obfuscationView.hidden = YES;
+    self.fullScreenButton.hidden = NO;
+    self.sketchButton.hidden = NO;
     self.image = nil;
 
     if (self.imageAspectConstraint) {
@@ -167,7 +170,6 @@ static ImageCache *imageCache(void)
 - (void)didEndDisplayingInTableView
 {
     [super didEndDisplayingInTableView];
-    
     [self recycleImage];
 }
 
@@ -176,6 +178,7 @@ static ImageCache *imageCache(void)
     self.imageViewContainer = [[UIView alloc] init];
     self.imageViewContainer.translatesAutoresizingMaskIntoConstraints = NO;
     self.imageViewContainer.isAccessibilityElement = YES;
+    self.imageViewContainer.accessibilityTraits = UIAccessibilityTraitImage;
     [self.messageContentView addSubview:self.imageViewContainer];
         
     self.fullImageView = [[FLAnimatedImageView alloc] init];
@@ -186,9 +189,12 @@ static ImageCache *imageCache(void)
 
     self.loadingView = [[ThreeDotsLoadingView alloc] initForAutoLayout];
     [self.imageViewContainer addSubview:self.loadingView];
+
+    self.obfuscationView = [[UIView alloc] initForAutoLayout];
+    [self.imageViewContainer addSubview:self.obfuscationView];
+    self.obfuscationView.hidden = YES;
   
     self.accessibilityIdentifier = @"ImageCell";
-    
     self.loadingView.hidden = NO;
     
     self.sketchButton = [IconButton iconButtonCircularLight];
@@ -231,6 +237,9 @@ static ImageCache *imageCache(void)
     [self.fullScreenButton autoPinEdgeToSuperviewEdge:ALEdgeRight withInset:16];
     [self.fullScreenButton autoPinEdgeToSuperviewEdge:ALEdgeBottom withInset:16];
     [self.fullScreenButton autoSetDimensionsToSize:CGSizeMake(32, 32)];
+
+    [self.obfuscationView autoPinEdgesToSuperviewEdges];
+    [self.countdownContainerView autoPinEdge:ALEdgeTop toEdge:ALEdgeTop ofView:self.fullImageView withOffset:8];
 }
 
  - (void)updateImageMessageConstraintConstants
@@ -265,13 +274,14 @@ static ImageCache *imageCache(void)
     if (! [Message isImageMessage:convMessage]) {
         return;
     }
+
+    [super configureForMessage:convMessage layoutProperties:layoutProperties];
+
     id<ZMImageMessageData> imageMessageData = convMessage.imageMessageData;
     
     // request
     [convMessage requestImageDownload]; // there is no harm in calling this if the full content is already available
-    
-    [super configureForMessage:convMessage layoutProperties:layoutProperties];
-    
+
     self.originalImageSize = imageMessageData.originalSize;
     
     [self updateImageMessageConstraintConstants];
@@ -320,9 +330,17 @@ static ImageCache *imageCache(void)
         }];
     }
     else {
-        // We did not download the medium image yet, start the progress animation
-        [self.loadingView startProgressAnimation];
-        self.loadingView.hidden = NO;
+
+        if (convMessage.isObfuscated) {
+            self.loadingView.hidden = YES;
+            self.obfuscationView.hidden = NO;
+            self.fullScreenButton.hidden = YES;
+            self.sketchButton.hidden = YES;
+        } else {
+            // We did not download the medium image yet, start the progress animation
+            [self.loadingView startProgressAnimation];
+            self.loadingView.hidden = NO;
+        }
     }
 }
 
@@ -347,6 +365,10 @@ static ImageCache *imageCache(void)
 - (void)updateSavableImage
 {
     NSData *data = self.message.imageMessageData.mediumData;
+    if (nil == data) {
+        return;
+    }
+
     UIImageOrientation orientation = self.fullImageView.image.imageOrientation;
     self.savableImage = [[SavableImage alloc] initWithData:data orientation:orientation];
 }
@@ -354,7 +376,8 @@ static ImageCache *imageCache(void)
 - (void)setSelected:(BOOL)selected animated:(BOOL)animated
 {
     [super setSelected:selected animated:animated];
-    
+    [self updateAccessibilityElements];
+
     dispatch_block_t changeBlock = ^{
         self.sketchButton.alpha = self.selected ? 1 : 0;
         self.fullScreenButton.alpha = self.selected ? 1 : 0;
@@ -379,6 +402,19 @@ static ImageCache *imageCache(void)
     self.image = nil;
 }
 
+- (void)updateAccessibilityElements
+{
+    
+    NSMutableArray *elements = self.accessibilityElements.mutableCopy;
+    [elements addObject:self.imageViewContainer];
+    
+    if (self.selected) {
+        [elements addObjectsFromArray:@[self.sketchButton, self.fullScreenButton, self.imageViewContainer]];
+    }
+
+    self.accessibilityElements = elements;
+}
+
 #pragma mark - Actions
 
 - (void)onFullScreenPressed:(id)sender {
@@ -396,7 +432,7 @@ static ImageCache *imageCache(void)
 {
     BOOL needsLayout = [super updateForMessage:change];
     
-    if (change.imageChanged) {
+    if (change.imageChanged || change.isObfuscatedChanged) {
         [self configureForMessage:self.message layoutProperties:self.layoutProperties];
     }
     

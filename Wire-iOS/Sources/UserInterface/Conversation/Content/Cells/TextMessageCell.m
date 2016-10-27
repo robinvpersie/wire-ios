@@ -25,7 +25,6 @@
 #import "zmessaging+iOS.h"
 #import "ZMConversation+Additions.h"
 #import "WAZUIMagicIOS.h"
-#import "TextViewWithDataDetectorWorkaround.h"
 #import "Message+Formatting.h"
 #import "UIView+Borders.h"
 #import "Constants.h"
@@ -50,7 +49,7 @@
 
 @property (nonatomic, assign) BOOL initialTextCellConstraintsCreated;
 
-@property (nonatomic, strong) TextViewWithDataDetectorWorkaround *messageTextView;
+@property (nonatomic, strong) LinkInteractionTextView *messageTextView;
 @property (nonatomic, strong) UIView *linkAttachmentContainer;
 @property (nonatomic, strong) UIImageView *editedImageView;
 @property (nonatomic, strong) LinkAttachment *linkAttachment;
@@ -60,6 +59,8 @@
 @property (nonatomic, strong) NSLayoutConstraint *mediaPlayerLeftMarginConstraint;
 @property (nonatomic, strong) NSLayoutConstraint *mediaPlayerRightMarginConstraint;
 @property (nonatomic, strong) UIView *linkAttachmentView;
+
+
 
 @property (nonatomic) NSLayoutConstraint *textViewHeightConstraint;
 
@@ -82,7 +83,7 @@
 - (void)prepareForReuse
 {
     [super prepareForReuse];
-    
+
     self.mediaPlayerTopMarginConstraint.constant = 0;
     [self.linkAttachmentViewController.view removeFromSuperview];
     self.linkAttachmentViewController = nil;
@@ -92,11 +93,11 @@
 
 - (void)createTextMessageViews
 {
-    self.messageTextView = [[TextViewWithDataDetectorWorkaround alloc] init];
+    self.messageTextView = [[LinkInteractionTextView alloc] init];
     self.messageTextView.translatesAutoresizingMaskIntoConstraints = NO;
-    self.messageTextView.textViewInteractionDelegate = self;
+    self.messageTextView.interactionDelegate = self;
     [self.messageContentView addSubview:self.messageTextView];
-    
+
     ColorScheme *scheme = ColorScheme.defaultColorScheme;
     self.messageTextView.dataDetectorTypes = UIDataDetectorTypeNone;
     self.messageTextView.editable = NO;
@@ -106,6 +107,8 @@
     self.messageTextView.textContainerInset = UIEdgeInsetsZero;
     self.messageTextView.textContainer.lineFragmentPadding = 0;
     self.messageTextView.userInteractionEnabled = YES;
+    self.messageTextView.accessibilityIdentifier = @"Message";
+    self.messageTextView.accessibilityElementsHidden = NO;
 
     self.linkAttachmentContainer = [[UIView alloc] init];
     self.linkAttachmentContainer.translatesAutoresizingMaskIntoConstraints = NO;
@@ -120,6 +123,10 @@
     
     UILongPressGestureRecognizer *attachmentLongPressRecognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleAttachmentLongPress:)];
     [self.linkAttachmentContainer addGestureRecognizer:attachmentLongPressRecognizer];
+    
+    NSMutableArray *accessibilityElements = [NSMutableArray arrayWithArray:self.accessibilityElements];
+    [accessibilityElements addObjectsFromArray:@[self.messageTextView]];
+    self.accessibilityElements = accessibilityElements;
 }
 
 - (void)createConstraints
@@ -141,6 +148,14 @@
     
     [self.editedImageView autoPinEdge:ALEdgeLeft toEdge:ALEdgeRight ofView:self.authorLabel withOffset:8];
     [self.editedImageView autoAlignAxis:ALAxisHorizontal toSameAxisOfView:self.authorLabel];
+    [self.countdownContainerView autoPinEdge:ALEdgeTop toEdge:ALEdgeTop ofView:self.messageTextView];
+}
+
+- (void)willDeleteMessage
+{
+    // If we have a linkattachment which is playing we need to stop
+    [self.linkAttachmentViewController tearDown];
+    [super willDeleteMessage];
 }
 
 - (void)updateTextMessageConstraintConstants
@@ -167,9 +182,10 @@
     // We do not want to expand the giphy.com link that is sent when sending a GIF via Giphy
     BOOL isGiphy = [textMesssageData.linkPreview.originalURLString.lowercaseString isEqualToString:@"giphy.com"];
 
-    NSAttributedString *attributedMessageText = [Message formattedTextWithLinkAttachments:layoutProperties.linkAttachments
-                                                                               forMessage:message.textMessageData
-                                                                                  isGiphy:isGiphy];
+    NSAttributedString *attributedMessageText = [NSAttributedString formattedStringWithLinkAttachments:layoutProperties.linkAttachments
+                                                                                            forMessage:message.textMessageData
+                                                                                               isGiphy:isGiphy
+                                                                                            obfuscated:message.isObfuscated];
     self.messageTextView.attributedText = attributedMessageText;
     [self.messageTextView layoutIfNeeded];
     self.textViewHeightConstraint.active = attributedMessageText.length == 0;
@@ -197,22 +213,23 @@
     }
 
     if (linkPreview != nil && nil == self.linkAttachmentViewController && !isGiphy) {
-            ArticleView *articleView = [[ArticleView alloc] initWithImagePlaceholder:textMesssageData.hasImageData];
-            articleView.translatesAutoresizingMaskIntoConstraints = NO;
-            [articleView configureWithTextMessageData:textMesssageData];
-            [self.linkAttachmentContainer addSubview:articleView];
-            [articleView autoPinEdgeToSuperviewEdge:ALEdgeTop];
-            [articleView autoPinEdgeToSuperviewEdge:ALEdgeBottom];
-            [articleView autoPinEdgeToSuperviewMargin:ALEdgeLeft];
-            [articleView autoPinEdgeToSuperviewMargin:ALEdgeRight];
-            articleView.delegate = self;
-            self.linkAttachmentView = articleView;
-        }
-    
+        ArticleView *articleView = [[ArticleView alloc] initWithImagePlaceholder:textMesssageData.hasImageData];
+        articleView.translatesAutoresizingMaskIntoConstraints = NO;
+        [articleView configureWithTextMessageData:textMesssageData obfuscated:message.isObfuscated];
+        [self.linkAttachmentContainer addSubview:articleView];
+        [articleView autoPinEdgeToSuperviewEdge:ALEdgeTop];
+        [articleView autoPinEdgeToSuperviewEdge:ALEdgeBottom];
+        [articleView autoPinEdgeToSuperviewMargin:ALEdgeLeft];
+        [articleView autoPinEdgeToSuperviewMargin:ALEdgeRight];
+        articleView.delegate = self;
+        self.linkAttachmentView = articleView;
+    }
+
     [self.linkAttachmentViewController fetchAttachment];
 
     [self updateTextMessageConstraintConstants];
 }
+
 
 - (LinkAttachment *)lastKnownLinkAttachmentInList:(NSArray *)linkAttachments
 {
@@ -224,7 +241,7 @@
             result = linkAttachment;
         }
     }
-    
+
     return result;
 }
 
@@ -233,6 +250,12 @@
 /// Overriden from the super class cell
 - (BOOL)updateForMessage:(MessageChangeInfo *)change
 {
+    if (change.isObfuscatedChanged) {
+        // We need to tear down the attachment controller before super is called,
+        // as the attachment will already be set to `nil` otherwise
+        [self.linkAttachmentViewController tearDown];
+    }
+
     BOOL needsLayout = [super updateForMessage:change];
 
     if (change.linkPreviewChanged && self.linkAttachmentView == nil) {
@@ -250,13 +273,12 @@
     id<ZMTextMessageData> textMesssageData = change.message.textMessageData;
     if (change.imageChanged && nil != textMesssageData.linkPreview && [self.linkAttachmentView isKindOfClass:ArticleView.class]) {
         ArticleView *articleView = (ArticleView *)self.linkAttachmentView;
-        [articleView configureWithTextMessageData:textMesssageData];
+        [articleView configureWithTextMessageData:textMesssageData obfuscated:self.message.isObfuscated];
         [self.message requestImageDownload];
     }
-    
+
     return needsLayout;
 }
-
 
 #pragma mark - Copy/Paste
 
@@ -376,9 +398,9 @@
 
 #pragma mark - TextViewInteractionDelegate
 
-- (void)textView:(TextViewWithDataDetectorWorkaround *)textView willOpenURL:(NSURL *)URL
+- (void)textView:(LinkInteractionTextView *)textView open:(NSURL *)url
 {
-    LinkAttachment *linkAttachment = [self.layoutProperties.linkAttachments filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF.URL == %@", URL]].lastObject;
+    LinkAttachment *linkAttachment = [self.layoutProperties.linkAttachments filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF.URL == %@", url]].lastObject;
     
     if (linkAttachment != nil) {
         [self.analyticsTracker tagExternalLinkVisitEventForAttachmentType:linkAttachment.type
@@ -387,12 +409,15 @@
         [self.analyticsTracker tagExternalLinkVisitEventForAttachmentType:LinkAttachmentTypeNone
                                                          conversationType:self.message.conversation.conversationType];
     }
+
+    [url open];
 }
 
-- (void)textView:(TextViewWithDataDetectorWorkaround *)textView didLongPressLinkWithGestureRecognizer:(UILongPressGestureRecognizer *)longPress
+- (void)textView:(LinkInteractionTextView *)textView didLongPressLink:(UILongPressGestureRecognizer *)recognizer
 {
     [self showMenu];
 }
+
 
 @end
 

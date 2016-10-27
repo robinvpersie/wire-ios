@@ -22,12 +22,14 @@ import Cartography
 import AddressBook
 
 /// Displays the location message
-@objc public class LocationMessageCell: ConversationCell {
+public final class LocationMessageCell: ConversationCell {
     
     private let mapView = MKMapView()
     private let containerView = UIView()
+    private let obfuscationView = UIView()
     private let addressContainerView = UIView()
     private let addressLabel = UILabel()
+    private var recognizer: UITapGestureRecognizer?
     private weak var locationAnnotation: MKPointAnnotation? = nil
     var labelFont: UIFont?
     var labelTextColor, containerColor: UIColor?
@@ -38,7 +40,7 @@ import AddressBook
         containerView.layer.cornerRadius = 4
         containerView.clipsToBounds = true
         containerView.cas_styleClass = "container-view"
-        CASStyler.defaultStyler().styleItem(self)
+        CASStyler.default().styleItem(self)
         configureViews()
         createConstraints()
     }
@@ -48,33 +50,37 @@ import AddressBook
     }
     
     private func configureViews() {
-        mapView.scrollEnabled = false
-        mapView.zoomEnabled = false
-        mapView.rotateEnabled = false
-        mapView.pitchEnabled = false
-        mapView.mapType = .Standard
+        mapView.isScrollEnabled = false
+        mapView.isZoomEnabled = false
+        mapView.isRotateEnabled = false
+        mapView.isPitchEnabled = false
+        mapView.mapType = .standard
         mapView.showsPointsOfInterest = true
         mapView.showsBuildings = true
-        mapView.userInteractionEnabled = false
-        containerView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(openInMaps)))
+        mapView.isUserInteractionEnabled = false
+        obfuscationView.backgroundColor = UIColor.wr_color(fromColorScheme: ColorSchemeColorEphemeral)
+        recognizer = UITapGestureRecognizer(target: self, action: #selector(openInMaps))
+        containerView.addGestureRecognizer(recognizer!)
         messageContentView.addSubview(containerView)
-        [mapView, addressContainerView].forEach(containerView.addSubview)
+        [mapView, addressContainerView, obfuscationView].forEach(containerView.addSubview)
         addressContainerView.addSubview(addressLabel)
-        
-        guard let font = labelFont, color = labelTextColor, containerColor = containerColor else { return }
+        obfuscationView.isHidden = true
+
+        guard let font = labelFont, let color = labelTextColor, let containerColor = containerColor else { return }
         addressLabel.font = font
         addressLabel.textColor = color
         addressContainerView.backgroundColor = containerColor
     }
     
     private func createConstraints() {
-        constrain(messageContentView, containerView, authorLabel, mapView) { contentView, container, authorLabel, mapView in
+        constrain(messageContentView, containerView, authorLabel, mapView, obfuscationView) { contentView, container, authorLabel, mapView, obfuscationView in
             container.left == authorLabel.left
             container.right == contentView.rightMargin
             container.top == contentView.top
             container.bottom == contentView.bottom
             container.height == 160
             mapView.edges == container.edges
+            obfuscationView.edges == container.edges
         }
         
         constrain(containerView, addressContainerView, addressLabel) { container, addressContainer, addressLabel in
@@ -84,17 +90,32 @@ import AddressBook
             addressLabel.edges == inset(addressContainer.edges, 12, 0)
             addressContainer.height == 42
         }
+
+        constrain(containerView, countdownContainerView) { container, countDownContainer in
+            countDownContainer.top == container.top
+        }
     }
-    
-    public override func configureForMessage(message: ZMConversationMessage!, layoutProperties: ConversationCellLayoutProperties!) {
-        super.configureForMessage(message, layoutProperties: layoutProperties)
+
+    public override func prepareForReuse() {
+        super.prepareForReuse()
+        obfuscationView.isHidden = true
+    }
+
+    public override func configure(for message: ZMConversationMessage!, layoutProperties: ConversationCellLayoutProperties!) {
+        super.configure(for: message, layoutProperties: layoutProperties)
+        recognizer?.isEnabled = !message.isObfuscated
+        if message.isObfuscated {
+            obfuscationView.isHidden = false
+            return
+        }
+
         guard let locationData = message.locationMessageData else { return }
         
         if let address = locationData.name {
-            addressContainerView.hidden = false
+            addressContainerView.isHidden = false
             addressLabel.text = address
         } else {
-            addressContainerView.hidden = true
+            addressContainerView.isHidden = true
         }
         
         updateMapLocation(withLocationData: locationData)
@@ -108,6 +129,13 @@ import AddressBook
         mapView.addAnnotation(annotation)
         locationAnnotation = annotation
     }
+
+    public override func update(forMessage changeInfo: MessageChangeInfo!) -> Bool {
+        super.update(forMessage: changeInfo)
+        guard changeInfo.isObfuscatedChanged else { return false }
+        configure(for: message, layoutProperties: layoutProperties)
+        return true
+    }
     
     func updateMapLocation(withLocationData locationData: ZMLocationMessageData) {
         if locationData.zoomLevel != 0 {
@@ -119,7 +147,7 @@ import AddressBook
         }
     }
     
-    public override func layoutSubviews() {
+    open override func layoutSubviews() {
         super.layoutSubviews()
         guard let locationData = message.locationMessageData else { return }
         // The zoomLevel calculation depends on the frame of the mapView, so we need to call this here again
@@ -130,26 +158,26 @@ import AddressBook
         message?.locationMessageData?.openInMaps(withSpan: mapView.region.span)
         guard let conversation = message.conversation else { return }
         let sentBySelf = message.sender?.isSelfUser ?? false
-        Analytics.shared()?.tagMediaOpened(.Location, inConversation: conversation, sentBySelf: sentBySelf)
+        Analytics.shared()?.tagMediaOpened(.location, inConversation: conversation, sentBySelf: sentBySelf)
     }
     
-    public override func messageType() -> MessageType {
-        return .Location
+    open override func messageType() -> MessageType {
+        return .location
     }
     
     // MARK: - Selection
     
-    public override var selectionRect: CGRect {
+    open override var selectionRect: CGRect {
         return containerView.bounds
     }
     
-    public override var selectionView: UIView! {
+    open override var selectionView: UIView! {
         return containerView
     }
     
     // MARK: - Selection, Copy & Delete
     
-    public override func canPerformAction(action: Selector, withSender sender: AnyObject?) -> Bool {
+    open override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         switch action {
         case #selector(cut), #selector(paste), #selector(select), #selector(selectAll):
             return false
@@ -160,13 +188,13 @@ import AddressBook
         }
     }
     
-    public override func copy(sender: AnyObject?) {
+    open override func copy(_ sender: Any?) {
         guard let locationMessageData = message.locationMessageData else { return }
         let coordinates = "\(locationMessageData.latitude), \(locationMessageData.longitude)"
-        UIPasteboard.generalPasteboard().string = message.locationMessageData?.name ?? coordinates
+        UIPasteboard.general.string = message.locationMessageData?.name ?? coordinates
     }
     
-    public override func menuConfigurationProperties() -> MenuConfigurationProperties! {
+    open override func menuConfigurationProperties() -> MenuConfigurationProperties! {
         let properties = MenuConfigurationProperties()
         properties.targetRect = selectionRect
         properties.targetView = selectionView
@@ -174,27 +202,37 @@ import AddressBook
         return properties
     }
     
-    private func setSelectedByMenu(selected: Bool, animated: Bool) {
-        UIView.animateWithDuration(animated ? ConversationCellSelectionAnimationDuration: 0) {
+    private func setSelectedByMenu(_ selected: Bool, animated: Bool) {
+        UIView.animate(withDuration: animated ? ConversationCellSelectionAnimationDuration: 0) {
             self.containerView.alpha = selected ? ConversationCellSelectedOpacity : 1
         }
     }
 }
 
 private extension ZMLocationMessageData {
-    
-    private func openInMaps(withSpan span: MKCoordinateSpan) {
+
+    func openInMaps(withSpan span: MKCoordinateSpan) {
         let launchOptions = [
-            MKLaunchOptionsMapCenterKey: NSValue(MKCoordinate: coordinate),
-            MKLaunchOptionsMapSpanKey: NSValue(MKCoordinateSpan: span)
+            MKLaunchOptionsMapCenterKey: NSValue(mkCoordinate: coordinate),
+            MKLaunchOptionsMapSpanKey: NSValue(mkCoordinateSpan: span)
         ]
-        mapItem?.openInMapsWithLaunchOptions(launchOptions)
+
+        if let url = googleMapsURL, url.openAsLocation() {
+            return
+        }
+
+        mapItem?.openInMaps(launchOptions: launchOptions)
     }
-    
-    private var mapItem: MKMapItem? {
+
+    var googleMapsURL: URL? {
+        let location = "\(coordinate.latitude),\(coordinate.longitude)"
+        return URL(string: "comgooglemaps://?q=\(location)&center=\(location)&zoom=\(zoomLevel)")
+    }
+
+    var mapItem: MKMapItem? {
         var addressDictionary: [String : AnyObject]? = nil
         if let name = name {
-            addressDictionary = [String(kABPersonAddressStreetKey): name]
+            addressDictionary = [String(kABPersonAddressStreetKey): name as AnyObject]
         }
         
         let placemark = MKPlacemark(coordinate: coordinate, addressDictionary: addressDictionary)

@@ -114,6 +114,7 @@
 @property (nonatomic) id <ZMConversationMessageWindowObserverOpaqueToken> messageWindowObserverToken;
 @property (nonatomic) BOOL waitingForFileDownload;
 @property (nonatomic) UIDocumentInteractionController *documentInteractionController;
+@property (nonatomic) BOOL onScreen;
 
 @end
 
@@ -182,12 +183,20 @@
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    self.onScreen = YES;
     
     self.activeMediaPlayerObserver = [KeyValueObserver observeObject:[AppDelegate sharedAppDelegate].mediaPlaybackManager
                                                              keyPath:@"activeMediaPlayer"
                                                               target:self
                                                             selector:@selector(activeMediaPlayerChanged:)
+
                                                              options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew];
+
+    for (ConversationCell *cell in self.tableView.visibleCells) {
+        if ([cell isKindOfClass:ConversationCell.class]) {
+            [cell willDisplayInTableView];
+        }
+    }
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -196,6 +205,12 @@
     [AppDelegate sharedAppDelegate].notificationWindowController.showLoadMessages = self.wasFetchingMessages;
     
     [self updateVisibleMessagesWindow];
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    self.onScreen = NO;
+    [super viewWillDisappear:animated];
 }
 
 - (void)viewDidLayoutSubviews
@@ -326,7 +341,7 @@
         id<ZMConversationMessage>topVisibleMessage = [self.messageWindow.messages objectAtIndex:topVisibleIndexPath.row];
         id<ZMConversationMessage>bottomVisibleMessage = [self.messageWindow.messages objectAtIndex:bottomVisibleIndexPath.row];
         [[ZMUserSession sharedSession] enqueueChanges:^{
-            [self.conversation setVisibleWindowFromMessage:topVisibleMessage toMessage:bottomVisibleMessage];
+            [self.conversation setVisibleWindowFromMessage:(ZMMessage *)topVisibleMessage toMessage:(ZMMessage *)bottomVisibleMessage];
         }];
     }
 }
@@ -389,6 +404,7 @@
             self.waitingForFileDownload = YES;
             
             [self.analyticsTracker tagInitiatedFileDownloadWithSize:message.fileMessageData.size
+                                                            message:message
                                                       fileExtension:[message.fileMessageData.filename pathExtension]];
         }
             break;
@@ -407,6 +423,8 @@
         }];
         return;
     }
+
+    [message startSelfDestructionIfNeeded];
 
     [self.analyticsTracker tagOpenedFileWithSize:message.fileMessageData.size
                                    fileExtension:[message.fileMessageData.filename pathExtension]];
@@ -513,7 +531,6 @@
     [cell.savableImage saveToLibraryWithCompletion:^{
         UIView *snapshot = [cell.fullImageView snapshotViewAfterScreenUpdates:YES];
         snapshot.translatesAutoresizingMaskIntoConstraints = YES;
-        snapshot.transform = CGAffineTransformInvert(self.tableView.transform); // UpsideDownTableView
         CGRect sourceRect = [self.view convertRect:cell.fullImageView.frame fromView:cell.fullImageView.superview];
         [self.delegate conversationContentViewController:self performImageSaveAnimation:snapshot sourceRect:sourceRect];
     }];
@@ -825,6 +842,30 @@
             [self openSketchForMessage:cell.message];
         }
             break;
+        case ConversationCellActionLike:
+        {
+            BOOL liked = ![Message isLikedMessage:cell.message];
+            
+            NSIndexPath *indexPath = [self.tableView indexPathForCell:cell];
+            
+            [[ZMUserSession sharedSession] enqueueChanges:^{
+                [Message setLikedMessage:cell.message liked:liked];
+                
+                if (liked) {
+                    // Deselect if necessary to show list of likers
+                    if (self.conversationMessageWindowTableViewAdapter.selectedMessage == cell.message) {
+                        [self tableView:self.tableView willSelectRowAtIndexPath:indexPath];
+                    }
+                } else {
+                    // Select if necessary to prevent message from collapsing
+                    if (self.conversationMessageWindowTableViewAdapter.selectedMessage != cell.message && ![Message hasReactions:cell.message]) {
+                        [self tableView:self.tableView willSelectRowAtIndexPath:indexPath];
+                        [self.tableView selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionNone];
+                    }
+                }
+            }];
+        }
+            break;
     }
 }
 
@@ -833,9 +874,7 @@
     [self.tableView selectRowAtIndexPath:[self.tableView indexPathForCell:cell] animated:NO scrollPosition:UITableViewScrollPositionNone];
     self.conversationMessageWindowTableViewAdapter.selectedMessage = cell.message;
 
-    if (! [UIApplication.sharedApplication openURL:url]) {
-        DDLogError(@"Unable to open URL: %@", url);
-    }
+    [url open];
     
     [self.tableView beginUpdates];
     [self.tableView endUpdates];
@@ -863,9 +902,14 @@
 - (void)conversationCellDidTapOpenLikers:(ConversationCell *)cell
 {
     if ([Message hasLikers:cell.message]) {
-        ReactionsListViewController *reactionsListController = [[ReactionsListViewController alloc] initWithMessage:cell.message];
+        ReactionsListViewController *reactionsListController = [[ReactionsListViewController alloc] initWithMessage:cell.message showsStatusBar:!IS_IPAD];
         [self.parentViewController presentViewController:reactionsListController animated:YES completion:nil];
     }
+}
+
+- (BOOL)conversationCellShouldStartDestructionTimer:(ConversationCell *)cell
+{
+    return self.onScreen;
 }
 
 @end
@@ -897,7 +941,7 @@
     return isInWindow && notCoveredModally && viewIsVisible;
 }
 
-- (void)handleMessageUpdateForFileUpload:(NSArray *)messageChangeInfos selectedMessage:(ZMMessage *)selectedMessage
+- (void)handleMessageUpdateForFileUpload:(NSArray *)messageChangeInfos selectedMessage:(id<ZMConversationMessage>)selectedMessage
 {
     if ([self viewControllerIsVisible]) {
         NSUInteger indexOfFileMessage = [[[self messageWindow] messages] indexOfObject:selectedMessage];
@@ -929,7 +973,7 @@
 - (void)messagesInsideWindowDidChange:(NSArray *)messageChangeInfos
 {
     if (self.waitingForFileDownload) {
-        ZMMessage *selectedMessage = self.conversationMessageWindowTableViewAdapter.selectedMessage;
+        id<ZMConversationMessage> selectedMessage = self.conversationMessageWindowTableViewAdapter.selectedMessage;
         if (([Message isVideoMessage:selectedMessage] ||
              [Message isAudioMessage:selectedMessage] ||
              [Message isFileTransferMessage:selectedMessage]) && selectedMessage.fileMessageData.transferState == ZMFileTransferStateDownloaded) {

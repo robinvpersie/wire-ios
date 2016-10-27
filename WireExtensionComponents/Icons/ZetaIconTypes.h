@@ -47,6 +47,7 @@ typedef NS_ENUM(NSInteger, ZetaIconType)
     ZetaIconTypeCameraLens                      = 0x143,
     ZetaIconTypeCameraShutter                   = 0x144,
     ZetaIconTypeCameraSwitch                    = 0x120,
+    ZetaIconTypeTypingDots                      = 0x124,
     ZetaIconTypeSpinner                         = 0x126, // The activity spinner
     ZetaIconTypeLocationPin                     = 0x148, // Placemarker
     ZetaIconTypeEye                             = 0x185,
@@ -71,7 +72,6 @@ typedef NS_ENUM(NSInteger, ZetaIconType)
     ZetaIconTypeRedo                            = 0x117,
     ZetaIconTypeLocation                        = 0x149,
     
-    ZetaIconTypeZetaLogo                        = 0x202,
     ZetaIconTypeLeave                           = 0x205,
     ZetaIconTypeConvMetaAddPerson               = 0x215,
     ZetaIconTypePhone                           = 0x211,
@@ -127,6 +127,20 @@ typedef NS_ENUM(NSInteger, ZetaIconType)
     ZetaIconTypeLike                            = 0x183,
     ZetaIconTypeLiked                           = 0x184,
     
+    ZetaIconTypeSettingsAccount                 = 0x187,
+    ZetaIconTypeSettingsDevices                 = 0x188,
+    ZetaIconTypeSettingsOptions                 = 0x135,
+    ZetaIconTypeSettingsAdvanced                = 0x134,
+    ZetaIconTypeSettingsSupport                 = 0x127,
+    ZetaIconTypeWireLogo                        = 0x202,
+
+    ZetaIconTypeSend                            = 0x235,
+    ZetaIconTypeText                            = 0x236,
+    ZetaIconTypeEmoji                           = 0x237,
+    ZetaIconTypeBackspace                       = 0x238,
+
+    ZetaIconTypeHourglass                       = 0x239,
+
     ZetaIconTypeEffectBallon                    = 0x240,
     ZetaIconTypeEffectJellyfish                 = 0x242,
     ZetaIconTypeEffectRabbit                    = 0x243,
@@ -134,6 +148,16 @@ typedef NS_ENUM(NSInteger, ZetaIconType)
     ZetaIconTypeEffectAlien                     = 0x245,
     ZetaIconTypeEffectRobot                     = 0x246,
     ZetaIconTypeEffectReverse                   = 0x247,
+
+    // Emoji Categories
+    ZetaIconTypeFlower                          = 0x250,
+    ZetaIconTypeCake                            = 0x251,
+    ZetaIconTypeCar                             = 0x252,
+    ZetaIconTypeBall                            = 0x253,
+    ZetaIconTypeCrown                           = 0x254,
+    ZetaIconTypeAsterisk                        = 0x255,
+    ZetaIconTypeFlag                            = 0x256,
+    
 };
 
 typedef NS_ENUM(NSInteger, ZetaIconSize) {

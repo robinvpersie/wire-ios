@@ -1,4 +1,4 @@
-// 
+//
 // Wire
 // Copyright (C) 2016 Wire Swiss GmbH
 // 
@@ -20,50 +20,62 @@
 import UIKit
 import Cartography
 
-public class ConversationTitleView: UIView {
+public final class ConversationTitleView: UIView {
     
     var titleColor, titleColorSelected: UIColor?
     var titleFont: UIFont?
-    var titleButton: UIButton!
-    public var tapHandler: (UIButton -> Void)? = nil
+    var titleButton = UIButton()
+    public var tapHandler: ((UIButton) -> Void)? = nil
     
     init(conversation: ZMConversation) {
-        super.init(frame: CGRectZero)
+        super.init(frame: CGRect.zero)
+        self.isAccessibilityElement = true
+        self.accessibilityLabel = "Name"
+        
         createViews(conversation)
-        CASStyler.defaultStyler().styleItem(self)
+        CASStyler.default().styleItem(self)
         configure(conversation)
         frame = titleButton.bounds
         createConstraints()
     }
     
-    func createViews(conversation: ZMConversation) {
-        titleButton = UIButton()
-        titleButton.addTarget(self, action: #selector(ConversationTitleView.titleButtonTapped(_:)), forControlEvents: .TouchUpInside)
+    private func createViews(_ conversation: ZMConversation) {
+        titleButton.addTarget(self, action: #selector(titleButtonTapped), for: .touchUpInside)
         addSubview(titleButton)
     }
     
-    func configure(conversation: ZMConversation) {
-        guard let font = titleFont, color = titleColor, selectedColor = titleColorSelected else { return }
-        let title = conversation.displayName.uppercaseString && font
+    func configure(_ conversation: ZMConversation) {
+        guard let font = titleFont, let color = titleColor, let selectedColor = titleColorSelected else { return }
+        let title = conversation.displayName.uppercased() && font
         
-        let titleWithColor: UIColor -> NSAttributedString = {
-            let attachment = NSTextAttachment()
-            attachment.image = UIImage(forIcon: .DownArrow, fontSize: 8, color: $0)
-            return (title + "  " + NSAttributedString(attachment: attachment)) && $0
+        let titleWithColor: (UIColor) -> NSAttributedString = {
+            var attributed = (title + "  " + NSAttributedString(attachment: .downArrow(color: $0)))
+            if conversation.securityLevel == .secure {
+                attributed = NSAttributedString(attachment: .verifiedShield()) + "  " + attributed
+            }
+            return attributed && $0
         }
-        
-        titleButton.setAttributedTitle(titleWithColor(color), forState: .Normal)
-        titleButton.setAttributedTitle(titleWithColor(selectedColor), forState: .Highlighted)
+
+        titleButton.setAttributedTitle(titleWithColor(color), for: UIControlState())
+        titleButton.setAttributedTitle(titleWithColor(selectedColor), for: .highlighted)
         titleButton.sizeToFit()
+        updateAccessibilityValue(conversation)
+        setNeedsLayout()
+        layoutIfNeeded()
     }
     
-    func createConstraints() {
+    private func updateAccessibilityValue(_ conversation: ZMConversation) {
+        let verifiedString = (conversation.securityLevel == .secure) ? " - verified fingerprints" : ""
+        self.accessibilityValue = conversation.displayName.uppercased() + verifiedString
+    }
+    
+    private func createConstraints() {
         constrain(self, titleButton) { view, button in
             button.edges == view.edges
         }
     }
     
-    func titleButtonTapped(sender: UIButton) {
+    func titleButtonTapped(_ sender: UIButton) {
         tapHandler?(sender)
     }
     
@@ -71,4 +83,23 @@ public class ConversationTitleView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
     
+}
+
+fileprivate extension NSTextAttachment {
+
+    static func downArrow(color: UIColor) -> NSTextAttachment {
+        let attachment = NSTextAttachment()
+        attachment.image = UIImage(for: .downArrow, fontSize: 8, color: color)
+        return attachment
+    }
+
+    static func verifiedShield() -> NSTextAttachment {
+        let attachment = NSTextAttachment()
+        let shield = WireStyleKit.imageOfShieldverified()!
+        attachment.image = shield
+        let ratio = shield.size.width / shield.size.height
+        let height: CGFloat = 12
+        attachment.bounds = CGRect(x: 0, y: -2, width: height * ratio, height: height)
+        return attachment
+    }
 }
